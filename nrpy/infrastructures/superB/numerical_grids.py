@@ -78,7 +78,10 @@ params_chare->Nxx_plus_2NGHOSTS2 = params_chare->Nxx2 + 2*NGHOSTS;
     for minmax in ["min", "max"]:
         for dirn in range(3):
             param_dir = f"params_chare->xx{minmax}{dirn}"
-            body += f"{param_dir} = params->xx{minmax}{dirn} + (params->dxx{dirn} * (REAL)(params_chare->Nxx{dirn} * chare_index[{dirn}]));\n"
+            if minmax == "min":
+                body += f"{param_dir} = params->xx{minmax}{dirn} + (params->dxx{dirn} * (REAL)(params_chare->Nxx{dirn} * chare_index[{dirn}]));\n"
+            else:
+                body += f"{param_dir} = params->xx{minmax}{dirn} - (params->dxx{dirn} * (REAL)(params_chare->Nxx{dirn} * (Nchare{dirn} - 1 - chare_index[{dirn}])));\n"
 
     body += r"""
 
@@ -116,6 +119,7 @@ for (int j = 0; j < params_chare->Nxx_plus_2NGHOSTS2; j++)
 def register_CFunction_numerical_grids_chare(
     enable_rfm_precompute: bool = False,
     enable_CurviBCs: bool = False,
+    enable_psi4_diagnostics: bool = False,
 ) -> None:
     """
     Register a C function to set up all numerical grids and timestep.
@@ -126,6 +130,7 @@ def register_CFunction_numerical_grids_chare(
 
     :param enable_rfm_precompute: Whether to enable reference metric precomputation (default: False).
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions (default: False).
+    :param enable_psi4_diagnostics: Whether or not to enable psi4 diagnostics.
     """
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
     desc = "Set up a cell-centered grids of size grid_physical_size."
@@ -148,28 +153,43 @@ for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
     if enable_rfm_precompute:
         body += r"""
 for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
-  rfm_precompute_malloc(commondata, &griddata_chare[grid].params, &griddata_chare[grid].rfmstruct);
-  rfm_precompute_defines(commondata, &griddata_chare[grid].params, &griddata_chare[grid].rfmstruct, griddata_chare[grid].xx);
+  griddata_chare[grid].rfmstruct = (rfm_struct *)malloc(sizeof(rfm_struct));
+  rfm_precompute_malloc(commondata, &griddata_chare[grid].params, griddata_chare[grid].rfmstruct);
+  rfm_precompute_defines(commondata, &griddata_chare[grid].params, griddata_chare[grid].rfmstruct, griddata_chare[grid].xx);
 }
 """
     else:
         body += "// (reference-metric precomputation disabled)\n"
+    body += r"""
+for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
+  charecommstruct_set_up(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, chare_index);
+"""
     body += "\n// Step 1.d: Set up curvilinear boundary condition struct (bcstruct)\n"
     if enable_CurviBCs:
         body += r"""
-for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
-  charecommstruct_set_up(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, chare_index);
-  bcstruct_chare_set_up(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata_chare[grid].xx, &griddata[grid].bcstruct, &griddata_chare[grid].bcstruct, chare_index);
+  bcstruct_chare_set_up(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata_chare[grid].xx, &griddata[grid].bcstruct, &griddata_chare[grid].bcstruct, &griddata_chare[grid].nonlocalinnerbcstruct, chare_index);
+"""
+    else:
+        body += "// (curvilinear boundary conditions bcstruct disabled)\n"
+
+    body += r"""
+  // Initialize the diagnostics struct with zero
+  griddata_chare[grid].diagnosticstruct = (diagnostic_struct){0};
   // 1D diagnostics set up
   diagnosticstruct_set_up_nearest_1d_y_axis(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata[grid].xx, chare_index, &griddata_chare[grid].diagnosticstruct);
   diagnosticstruct_set_up_nearest_1d_z_axis(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata[grid].xx, chare_index, &griddata_chare[grid].diagnosticstruct);
   // 2D diagnostics set up
   diagnosticstruct_set_up_nearest_2d_xy_plane(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata[grid].xx, chare_index, &griddata_chare[grid].diagnosticstruct);
   diagnosticstruct_set_up_nearest_2d_yz_plane(commondata, &griddata[grid].params, &griddata_chare[grid].params, &griddata_chare[grid].charecommstruct, griddata[grid].xx, chare_index, &griddata_chare[grid].diagnosticstruct);
-}
+    """
+    if enable_psi4_diagnostics:
+        body += r"""
+  psi4_diagnostics_set_up(commondata, &griddata[grid].params, &griddata_chare[grid].params,
+                                                &griddata_chare[grid].charecommstruct, griddata[grid].xx, chare_index,
+                                                &griddata_chare[grid].diagnosticstruct);
 """
-    else:
-        body += "// (curvilinear boundary conditions bcstruct disabled)\n"
+    body += r"""
+}"""
 
     cfc.register_CFunction(
         includes=includes,
@@ -186,6 +206,7 @@ def register_CFunctions(
     list_of_CoordSystems: List[str],
     enable_rfm_precompute: bool = False,
     enable_CurviBCs: bool = False,
+    enable_psi4_diagnostics: bool = False,
 ) -> None:
     """
     Register C functions related to coordinate systems and grid parameters.
@@ -193,6 +214,7 @@ def register_CFunctions(
     :param list_of_CoordSystems: List of CoordSystems
     :param enable_rfm_precompute: Whether to enable reference metric precomputation.
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions.
+    :param enable_psi4_diagnostics: Whether or not to enable psi4 diagnostics.
     """
     for CoordSystem in list_of_CoordSystems:
         register_CFunction_numerical_grid_params_Nxx_dxx_xx_chare(
@@ -201,4 +223,5 @@ def register_CFunctions(
     register_CFunction_numerical_grids_chare(
         enable_rfm_precompute=enable_rfm_precompute,
         enable_CurviBCs=enable_CurviBCs,
+        enable_psi4_diagnostics=enable_psi4_diagnostics,
     )

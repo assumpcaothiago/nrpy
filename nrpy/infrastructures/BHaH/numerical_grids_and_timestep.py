@@ -18,19 +18,16 @@ import nrpy.reference_metric as refmetric
 
 # fmt: off
 for i in range(3):
+    _ = par.CodeParameter("int", __name__, f"Nxx_plus_2NGHOSTS{i}", add_to_parfile=False, add_to_set_CodeParameters_h=True)
     _ = par.CodeParameter("int", __name__, f"Nxx{i}", 64)
-_ = par.CodeParameter("REAL", __name__, "convergence_factor", 1.0, commondata=True)
-for i in range(3):
-    _ = par.CodeParameter("int", __name__, f"Nxx_plus_2NGHOSTS{i}", add_to_parfile=False,
-                          add_to_set_CodeParameters_h=True)
     # reference_metric sets xxmin and xxmax below.
     _ = par.CodeParameter("REAL", __name__, f"xxmin{i}", -10.0, add_to_parfile=False, add_to_set_CodeParameters_h=True)
     _ = par.CodeParameter("REAL", __name__, f"xxmax{i}", 10.0, add_to_parfile=False, add_to_set_CodeParameters_h=True)
     _ = par.CodeParameter("REAL", __name__, f"invdxx{i}", add_to_parfile=False, add_to_set_CodeParameters_h=True)
     _ = par.CodeParameter("REAL", __name__, f"dxx{i}", add_to_parfile=False, add_to_set_CodeParameters_h=True)
+_ = par.CodeParameter("REAL", __name__, "convergence_factor", 1.0, commondata=True)
 _ = par.CodeParameter("int", __name__, "CoordSystem_hash", commondata=False, add_to_parfile=False)
-
-
+_ = par.CodeParameter("int", __name__, "grid_idx", commondata=False, add_to_parfile=False)
 # fmt: on
 
 
@@ -166,7 +163,7 @@ for (int j = 0; j < params->Nxx_plus_2NGHOSTS2; j++) xx[2][j] = params->xxmin2 +
 
 
 def register_CFunction_cfl_limited_timestep(
-    CoordSystem: str, fp_type: str = "double"
+    CoordSystem: str,
 ) -> None:
     """
     Register a C function to find the CFL-limited timestep dt on a numerical grid.
@@ -175,10 +172,9 @@ def register_CFunction_cfl_limited_timestep(
     is the minimum spacing between neighboring gridpoints on a numerical grid.
 
     :param CoordSystem: The coordinate system used for the simulation.
-    :param fp_type: Floating point type, e.g., "double".
     """
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
-    desc = f"Output minimum gridspacing ds_min on a {CoordSystem} numerical grid."
+    desc = f"Compute minimum timestep dt = CFL_FACTOR * ds_min on a {CoordSystem} numerical grid."
     cfunc_type = "void"
     name = "cfl_limited_timestep"
     params = "commondata_struct *restrict commondata, params_struct *restrict params, REAL *restrict xx[3]"
@@ -188,9 +184,9 @@ REAL ds_min = 1e38;
 LOOP_NOOMP(i0, 0, Nxx_plus_2NGHOSTS0,
            i1, 0, Nxx_plus_2NGHOSTS1,
            i2, 0, Nxx_plus_2NGHOSTS2) {
-    const REAL xx0 = xx[0][i0];
-    const REAL xx1 = xx[1][i1];
-    const REAL xx2 = xx[2][i2];
+    MAYBE_UNUSED const REAL xx0 = xx[0][i0];
+    MAYBE_UNUSED const REAL xx1 = xx[1][i1];
+    MAYBE_UNUSED const REAL xx2 = xx[2][i2];
     REAL dsmin0, dsmin1, dsmin2;
 """
     rfm = refmetric.reference_metric[CoordSystem]
@@ -203,7 +199,6 @@ LOOP_NOOMP(i0, 0, Nxx_plus_2NGHOSTS0,
         ],
         ["dsmin0", "dsmin1", "dsmin2"],
         include_braces=False,
-        fp_type=fp_type,
     )
     body += """ds_min = MIN(ds_min, MIN(dsmin0, MIN(dsmin1, dsmin2)));
 }
@@ -227,6 +222,7 @@ def register_CFunction_numerical_grids_and_timestep(
     gridding_approach: str = "independent grid(s)",
     enable_rfm_precompute: bool = False,
     enable_CurviBCs: bool = False,
+    enable_set_cfl_timestep: bool = True,
 ) -> None:
     """
     Register a C function to set up all numerical grids and timestep.
@@ -240,6 +236,7 @@ def register_CFunction_numerical_grids_and_timestep(
     :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
     :param enable_rfm_precompute: Whether to enable reference metric precomputation (default: False).
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions (default: False).
+    :param enable_set_cfl_timestep: Whether to enable computation of dt, the CFL timestep. A custom version can be implemented later.
 
     :raises ValueError: If invalid gridding_approach selected.
     """
@@ -317,8 +314,9 @@ def register_CFunction_numerical_grids_and_timestep(
     body += "\n// Step 1.d: Allocate memory for and define reference-metric precomputation lookup tables\n"
     if enable_rfm_precompute:
         body += r"""for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
-  rfm_precompute_malloc(commondata, &griddata[grid].params, &griddata[grid].rfmstruct);
-  rfm_precompute_defines(commondata, &griddata[grid].params, &griddata[grid].rfmstruct, griddata[grid].xx);
+  griddata[grid].rfmstruct = (rfm_struct *)malloc(sizeof(rfm_struct));
+  rfm_precompute_malloc(commondata, &griddata[grid].params, griddata[grid].rfmstruct);
+  rfm_precompute_defines(commondata, &griddata[grid].params, griddata[grid].rfmstruct, griddata[grid].xx);
 }
 """
     else:
@@ -331,19 +329,25 @@ def register_CFunction_numerical_grids_and_timestep(
 """
     else:
         body += "// (curvilinear boundary conditions bcstruct disabled)\n"
-    body += r"""
+    if enable_set_cfl_timestep:
+        body += r"""
 // Step 1.f: Set timestep based on minimum spacing between neighboring gridpoints.
 commondata->dt = 1e30;
 for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
   cfl_limited_timestep(commondata, &griddata[grid].params, griddata[grid].xx);
-}
-
+}"""
+    body += r"""
 // Step 1.g: Initialize timestepping parameters to zero if this is the first time this function is called.
 if(calling_for_first_time) {
   commondata->nn = 0;
   commondata->nn_0 = 0;
   commondata->t_0 = 0.0;
   commondata->time = 0.0;
+}
+
+// Step 1.h: Set grid_idx for each grid.
+for(int grid=0;grid<commondata->NUMGRIDS;grid++) {
+   griddata[grid].params.grid_idx = grid;
 }
 """
     cfc.register_CFunction(
@@ -364,7 +368,7 @@ def register_CFunctions(
     gridding_approach: str = "independent grid(s)",
     enable_rfm_precompute: bool = False,
     enable_CurviBCs: bool = False,
-    fp_type: str = "double",
+    enable_set_cfl_timestep: bool = True,
 ) -> None:
     """
     Register C functions related to coordinate systems and grid parameters.
@@ -375,22 +379,24 @@ def register_CFunctions(
     :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
     :param enable_rfm_precompute: Whether to enable reference metric precomputation.
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions.
-    :param fp_type: Floating point type, e.g., "double".
+    :param enable_set_cfl_timestep: Whether to enable computation of dt, the CFL timestep. A custom version can be implemented later.
     """
     for CoordSystem in list_of_CoordSystems:
         register_CFunction_numerical_grid_params_Nxx_dxx_xx(
             CoordSystem=CoordSystem,
             Nxx_dict=Nxx_dict,
         )
-        register_CFunction_cfl_limited_timestep(
-            CoordSystem=CoordSystem, fp_type=fp_type
-        )
+        if enable_set_cfl_timestep:
+            register_CFunction_cfl_limited_timestep(
+                CoordSystem=CoordSystem,
+            )
     register_CFunction_numerical_grids_and_timestep(
         list_of_CoordSystems=list_of_CoordSystems,
         list_of_grid_physical_sizes=list_of_grid_physical_sizes,
         gridding_approach=gridding_approach,
         enable_rfm_precompute=enable_rfm_precompute,
         enable_CurviBCs=enable_CurviBCs,
+        enable_set_cfl_timestep=enable_set_cfl_timestep,
     )
 
     if gridding_approach == "multipatch":

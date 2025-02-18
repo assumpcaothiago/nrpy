@@ -31,7 +31,7 @@ from nrpy.infrastructures.BHaH import (
     rfm_wrapper_functions,
     xx_tofrom_Cart,
 )
-from nrpy.infrastructures.BHaH.MoLtimestepping import MoL
+from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
 par.set_parval_from_str("Infrastructure", "BHaH")
 
@@ -139,7 +139,7 @@ if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0)
                                      RK_INPUT_GFS, RK_OUTPUT_GFS);"""
 if not enable_rfm_precompute:
     rhs_string = rhs_string.replace("rfmstruct", "xx")
-MoL.register_CFunctions(
+MoL_register_all.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string=rhs_string,
     post_rhs_string="""if (strncmp(commondata->outer_bc_type, "extrapolation", 50) == 0)
@@ -165,7 +165,7 @@ cmdpar.register_CFunction_cmdline_input_and_parfile_parser(
 )
 Bdefines_h.output_BHaH_defines_h(
     project_dir=project_dir,
-    enable_simd=enable_simd,
+    enable_intrinsics=enable_simd,
     enable_rfm_precompute=enable_rfm_precompute,
     fin_NGHOSTS_add_one_for_upwinding_or_KO=enable_KreissOliger_dissipation,
 )
@@ -184,7 +184,7 @@ if enable_simd:
         package="nrpy.helpers",
         filenames_list=["simd_intrinsics.h"],
         project_dir=project_dir,
-        subdirectory="simd",
+        subdirectory="intrinsics",
     )
 
 Makefile.output_CFunctions_function_prototypes_and_construct_Makefile(

@@ -20,17 +20,18 @@ import nrpy.helpers.parallel_codegen as pcg
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.infrastructures.BHaH.cmdline_input_and_parfiles as cmdpar
 import nrpy.infrastructures.BHaH.CodeParameters as CPs
-import nrpy.infrastructures.BHaH.CurviBoundaryConditions.CurviBoundaryConditions as cbc
 import nrpy.infrastructures.BHaH.diagnostics.progress_indicator as progress
 import nrpy.infrastructures.BHaH.nrpyelliptic.conformally_flat_C_codegen_library as nrpyellClib
 import nrpy.infrastructures.BHaH.numerical_grids_and_timestep as numericalgrids
 import nrpy.infrastructures.superB.chare_communication_maps as charecomm
 import nrpy.infrastructures.superB.CurviBoundaryConditions as superBcbc
+import nrpy.infrastructures.superB.initial_data as superBinitialdata
 import nrpy.infrastructures.superB.main_chare as superBmain
 import nrpy.infrastructures.superB.Makefile_helpers as superBMakefile
 import nrpy.infrastructures.superB.MoL as superBMoL
 import nrpy.infrastructures.superB.nrpyelliptic.conformally_flat_C_codegen_library as superBnrpyellClib
 import nrpy.infrastructures.superB.numerical_grids as superBnumericalgrids
+import nrpy.infrastructures.superB.superB.superB_pup as superBpup
 import nrpy.infrastructures.superB.timestepping_chare as superBtimestepping
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
@@ -83,17 +84,20 @@ fd_order = 10
 radiation_BC_fd_order = 6
 enable_simd = True
 parallel_codegen_enable = True
+outer_bcs_type = "radiation"
 boundary_conditions_desc = "outgoing radiation"
 # fmt: off
 initial_data_type = "gw150914"  # choices are: "gw150914", "axisymmetric", and "single_puncture"
-# Choosing number of chares, Nchare0, Nchare1, and Nchare2, in each direction:
-# 1. for spherical-like coordinates Nchare1 and Nchare2 cannot be greater than 1
-# 2. for cylindrical-like coordinates Nchare1 cannot be greater than 1
-# 3. Nxx0/Nchare0, Nxx1/Nchare1, Nxx2/Nchare2 should be an integer greater than NGHOSTS
+# Number of chares, Nchare0, Nchare1, and Nchare2, in each direction,
+# should be chosen such that Nxx0/Nchare0, Nxx1/Nchare1, Nxx2/Nchare2 are integers greater than NGHOSTS,
+# NGHOSTS is fd_order/2
 if "Spherical" in CoordSystem:
     par.adjust_CodeParam_default("Nchare0", 16)
+    par.adjust_CodeParam_default("Nchare1", 2)
+    par.adjust_CodeParam_default("Nchare2", 2)
 if "Cylindrical" in CoordSystem:
     par.adjust_CodeParam_default("Nchare0", 16)
+    par.adjust_CodeParam_default("Nchare1", 2)
     par.adjust_CodeParam_default("Nchare2", 32)
 
 q = 36.0 / 29.0
@@ -225,30 +229,33 @@ nrpyellClib.register_CFunction_check_stop_conditions()
 if __name__ == "__main__" and parallel_codegen_enable:
     pcg.do_parallel_codegen()
 
-cbc.CurviBoundaryConditions_register_C_functions(
-    list_of_CoordSystems=[CoordSystem], radiation_BC_fd_order=radiation_BC_fd_order
-)
 charecomm.chare_comm_register_C_functions(list_of_CoordSystems=[CoordSystem])
 superBcbc.CurviBoundaryConditions_register_C_functions(
-    list_of_CoordSystems=[CoordSystem]
+    list_of_CoordSystems=[CoordSystem],
+    radiation_BC_fd_order=radiation_BC_fd_order,
+    set_parity_on_aux=True,
 )
 
-rhs_string = """rhs_eval(commondata, params, rfmstruct,  auxevol_gfs, RK_INPUT_GFS, RK_OUTPUT_GFS);
-if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0){
-  const REAL wavespeed_at_outer_boundary = auxevol_gfs[IDX4(VARIABLE_WAVESPEEDGF, Nxx_plus_2NGHOSTS0-NGHOSTS-1, NGHOSTS, Nxx_plus_2NGHOSTS2/2)];
-  const REAL custom_gridfunctions_wavespeed[2] = {wavespeed_at_outer_boundary, wavespeed_at_outer_boundary};
-  apply_bcs_outerradiation_and_inner(commondata, params, bcstruct, griddata->xx,
-                                     custom_gridfunctions_wavespeed, gridfunctions_f_infinity,
-                                     RK_INPUT_GFS, RK_OUTPUT_GFS);
-}"""
+rhs_string = "rhs_eval(commondata, params, rfmstruct,  auxevol_gfs, RK_INPUT_GFS, RK_OUTPUT_GFS);"
+if outer_bcs_type == "radiation":
+    rhs_string += """
+const REAL wavespeed_at_outer_boundary = griddata[grid].params.wavespeed_at_outer_boundary;
+const REAL custom_gridfunctions_wavespeed[2] = {wavespeed_at_outer_boundary, wavespeed_at_outer_boundary};
+apply_bcs_outerradiation_and_inner(commondata, params, bcstruct, griddata->xx,
+                                    custom_gridfunctions_wavespeed, gridfunctions_f_infinity,
+                                    RK_INPUT_GFS, RK_OUTPUT_GFS);"""
 if not enable_rfm_precompute:
     rhs_string = rhs_string.replace("rfmstruct", "xx")
+
+post_rhs_bcs_str = ""
+if outer_bcs_type != "radiation":
+    post_rhs_bcs_str += """
+apply_bcs_outerextrap_and_inner(commondata, params, bcstruct, RK_OUTPUT_GFS);"""
 
 superBMoL.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string=rhs_string,
-    post_rhs_string="""if (strncmp(commondata->outer_bc_type, "extrapolation", 50) == 0)
-  apply_bcs_outerextrap_and_inner(commondata, params, bcstruct, RK_OUTPUT_GFS);""",
+    post_rhs_bcs_str=post_rhs_bcs_str,
     enable_rfm_precompute=enable_rfm_precompute,
     enable_curviBCs=True,
 )
@@ -350,9 +357,13 @@ serial {
 }
 """
 
+superBpup.register_CFunction_superB_pup_routines(
+    list_of_CoordSystems=[CoordSystem],
+    MoL_method=MoL_method,
+)
 copy_files(
     package="nrpy.infrastructures.superB.superB",
-    filenames_list=["superB.h"],
+    filenames_list=["superB.h", "superB_pup_function_prototypes.h"],
     project_dir=project_dir,
     subdirectory="superB",
 )
@@ -363,6 +374,7 @@ superBmain.output_commondata_object_h_and_main_h_cpp_ci(
 superBtimestepping.output_timestepping_h_cpp_ci_register_CFunctions(
     project_dir=project_dir,
     MoL_method=MoL_method,
+    outer_bcs_type=outer_bcs_type,
     enable_rfm_precompute=enable_rfm_precompute,
     enable_psi4_diagnostics=False,
     enable_residual_diagnostics=True,
@@ -377,7 +389,7 @@ griddata_commondata.register_CFunction_griddata_free(
 Bdefines_h.output_BHaH_defines_h(
     additional_includes=[str(Path("superB") / Path("superB.h"))],
     project_dir=project_dir,
-    enable_simd=enable_simd,
+    enable_intrinsics=enable_simd,
 )
 
 if enable_simd:
@@ -385,7 +397,7 @@ if enable_simd:
         package="nrpy.helpers",
         filenames_list=["simd_intrinsics.h"],
         project_dir=project_dir,
-        subdirectory="simd",
+        subdirectory="intrinsics",
     )
 
 superBMakefile.output_CFunctions_function_prototypes_and_construct_Makefile(

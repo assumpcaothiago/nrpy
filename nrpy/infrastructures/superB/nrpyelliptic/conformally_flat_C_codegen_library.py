@@ -24,7 +24,6 @@ from nrpy.infrastructures.BHaH import griddata_commondata
 # Define function to compute the l^2 of a gridfunction
 def register_CFunction_compute_L2_norm_of_gridfunction(
     CoordSystem: str,
-    fp_type: str = "double",
 ) -> None:
     """
     Register function to compute l2-norm of a gridfunction assuming a single grid.
@@ -33,7 +32,6 @@ def register_CFunction_compute_L2_norm_of_gridfunction(
     multiprocess race condition on Python 3.6.7
 
     :param CoordSystem: the rfm coordinate system.
-    :param fp_type: Floating point type, e.g., "double".
     """
     includes = ["BHaH_defines.h"]
     desc = "Compute l2-norm of a gridfunction assuming a single grid."
@@ -54,7 +52,6 @@ def register_CFunction_compute_L2_norm_of_gridfunction(
             "const REAL sqrtdetgamma",
         ],
         include_braces=False,
-        fp_type=fp_type,
     )
 
     loop_body += r"""
@@ -87,12 +84,93 @@ if(r < integration_radius) {
         read_xxs=True,
         loop_region="interior",
         OMP_custom_pragma=r"#pragma omp parallel for reduction(+:squared_sum,volume_sum)",
-        fp_type=fp_type,
     )
 
     body += r"""
   localsums_for_residualH[0] = squared_sum;
 	localsums_for_residualH[1] = volume_sum;
+"""
+
+    cfc.register_CFunction(
+        includes=includes,
+        desc=desc,
+        cfunc_type=cfunc_type,
+        CoordSystem_for_wrapper_func="",
+        name=name,
+        params=params,
+        include_CodeParameters_h=False,  # set_CodeParameters.h is manually included after the declaration of params_struct *restrict params
+        body=body,
+    )
+
+
+# Define function to compute the l^2 of a gridfunction between 2 radii
+def register_CFunction_compute_L2_norm_of_gridfunction_between_r1_r2(
+    CoordSystem: str,
+) -> None:
+    """
+    Register function to compute l2-norm of a gridfunction between 2 radii assuming a single grid.
+
+    Note that parallel codegen is disabled for this function, as it sometimes causes a
+    multiprocess race condition on Python 3.6.7
+
+    :param CoordSystem: the rfm coordinate system.
+    """
+    includes = ["BHaH_defines.h"]
+    desc = "Compute l2-norm of a gridfunction between 2 radii  assuming a single grid."
+    cfunc_type = "void"
+    name = "compute_L2_norm_of_gridfunction_between_r1_r2"
+    params = """commondata_struct *restrict commondata, griddata_struct *restrict griddata,
+                const REAL integration_radius1, const REAL integration_radius2, const int gf_index, const REAL *restrict in_gf, REAL localsums[2]"""
+
+    rfm = refmetric.reference_metric[CoordSystem]
+
+    loop_body = ccg.c_codegen(
+        [
+            rfm.xxSph[0],
+            rfm.detgammahat,
+        ],
+        [
+            "const REAL r",
+            "const REAL sqrtdetgamma",
+        ],
+        include_braces=False,
+    )
+
+    loop_body += r"""
+if(r > integration_radius1 && r < integration_radius2) {
+  const REAL gf_of_x = in_gf[IDX4(gf_index, i0, i1, i2)];
+  const REAL dV = sqrtdetgamma * dxx0 * dxx1 * dxx2;
+  squared_sum += gf_of_x * gf_of_x * dV;
+  volume_sum  += dV;
+} // END if(r > integration_radius1 && r < integration_radius2)
+"""
+    body = r"""
+  // Unpack grid parameters assuming a single grid
+  const int grid = 0;
+  params_struct *restrict params = &griddata[grid].params;
+#include "set_CodeParameters.h"
+
+  // Define reference metric grid
+  REAL *restrict xx[3];
+  for (int ww = 0; ww < 3; ww++)
+    xx[ww] = griddata[grid].xx[ww];
+
+  // Set summation variables to compute l2-norm
+  REAL squared_sum = 0.0;
+  REAL volume_sum  = 0.0;
+
+"""
+
+    body += lp.simple_loop(
+        loop_body="\n" + loop_body,
+        read_xxs=True,
+        loop_region="interior",
+        OMP_custom_pragma=r"#pragma omp parallel for reduction(+:squared_sum,volume_sum)",
+    )
+
+    body += r"""
+  localsums[0] = squared_sum;
+	localsums[1] = volume_sum;
 """
 
     cfc.register_CFunction(
@@ -189,7 +267,7 @@ def register_CFunction_diagnostics(
   const int nn = commondata->nn;
   const params_struct *restrict params = &griddata[grid].params;
   const params_struct *restrict params_chare = &griddata_chare[grid].params;
-  const rfm_struct *restrict rfmstruct_chare = &griddata_chare[grid].rfmstruct;
+  const rfm_struct *restrict rfmstruct_chare = griddata_chare[grid].rfmstruct;
   const charecomm_struct *restrict charecommstruct = &griddata_chare[grid].charecommstruct;
   const REAL *restrict y_n_gfs = griddata_chare[grid].gridfuncs.y_n_gfs;
   REAL *restrict auxevol_gfs = griddata_chare[grid].gridfuncs.auxevol_gfs;

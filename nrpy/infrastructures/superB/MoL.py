@@ -16,19 +16,24 @@ superB changes/additions to nrpy.infrastructures.BHaH.MoLtimestepping.MoL.py:
 """
 
 import os  # Standard Python module for multiplatform OS-level functions
+import warnings
 from typing import Dict, List, Tuple, Union
 
 import sympy as sp  # Import SymPy, a computer algebra system written entirely in Python
 
 import nrpy.c_function as cfc
 import nrpy.params as par  # NRPy+: Parameter interface
+from nrpy.c_codegen import c_codegen
+from nrpy.grid import BHaHGridFunction, glb_gridfcs_dict
+from nrpy.helpers.generic import superfast_uniq
 from nrpy.infrastructures.BHaH import BHaH_defines_h, griddata_commondata
-from nrpy.infrastructures.BHaH.MoLtimestepping.MoL import (
-    generate_gridfunction_names,
-    is_diagonal_Butcher,
+from nrpy.infrastructures.BHaH.MoLtimestepping.MoL_allocators import (
     register_CFunction_MoL_free_memory,
     register_CFunction_MoL_malloc,
-    single_RK_substep_input_symbolic,
+)
+from nrpy.infrastructures.BHaH.MoLtimestepping.MoL_gridfunction_names import (
+    generate_gridfunction_names,
+    is_diagonal_Butcher,
 )
 from nrpy.infrastructures.BHaH.MoLtimestepping.RK_Butcher_Table_Dictionary import (
     generate_Butcher_tables,
@@ -43,6 +48,179 @@ _ = par.CodeParameter("REAL", __name__, "t_0", add_to_parfile=False, add_to_set_
 _ = par.CodeParameter("REAL", __name__, "time", add_to_parfile=False, add_to_set_CodeParameters_h=True, commondata=True)
 _ = par.CodeParameter("REAL", __name__, "t_final", 10.0, commondata=True)
 # fmt: on
+
+
+# single_RK_substep_input_symbolic() performs necessary replacements to
+#   define C code for a single RK substep
+#   (e.g., computing k_1 and then updating the outer boundaries)
+def single_RK_substep_input_symbolic(
+    comment_block: str,
+    substep_time_offset_dt: Union[sp.Basic, int, str],
+    rhs_str: str,
+    rhs_input_expr: sp.Basic,
+    rhs_output_expr: sp.Basic,
+    RK_lhs_list: Union[sp.Basic, List[sp.Basic]],
+    RK_rhs_list: Union[sp.Basic, List[sp.Basic]],
+    post_rhs_output_list: Union[sp.Basic, List[sp.Basic]],
+    enable_simd: bool = False,
+    gf_aliases: str = "",
+    post_rhs_bcs_str: str = "",
+    post_rhs_string: str = "",
+) -> str:
+    """
+    Generate C code for a given Runge-Kutta substep.
+
+    :param comment_block: Block of comments for the generated code.
+    :param substep_time_offset_dt: Time offset for the RK substep.
+    :param rhs_str: Right-hand side string of the C code.
+    :param rhs_input_expr: Input expression for the RHS.
+    :param rhs_output_expr: Output expression for the RHS.
+    :param RK_lhs_list: List of LHS expressions for RK.
+    :param RK_rhs_list: List of RHS expressions for RK.
+    :param post_rhs_output_list: List of outputs for post-RHS expressions.
+    :param enable_simd: Whether SIMD optimization is enabled.
+    :param gf_aliases: Additional aliases for grid functions.
+    :param post_rhs_bcs_str: str to apply bcs immediately after RK update
+    :param post_rhs_string: String to be used after the post-RHS phase.
+
+    :return: A string containing the generated C code.
+
+    :raises ValueError: If substep_time_offset_dt cannot be extracted from the Butcher table.
+    """
+    # Ensure all input lists are lists
+    RK_lhs_list = [RK_lhs_list] if not isinstance(RK_lhs_list, list) else RK_lhs_list
+    RK_rhs_list = [RK_rhs_list] if not isinstance(RK_rhs_list, list) else RK_rhs_list
+
+    post_rhs_output_list = (
+        [post_rhs_output_list]
+        if not isinstance(post_rhs_output_list, list)
+        else post_rhs_output_list
+    )
+
+    return_str = f"{comment_block}\n"
+    if isinstance(substep_time_offset_dt, (int, sp.Rational, sp.Mul)):
+        substep_time_offset_str = f"{float(substep_time_offset_dt):.17e}"
+    else:
+        raise ValueError(
+            f"Could not extract substep_time_offset_dt={substep_time_offset_dt} from Butcher table"
+        )
+    return_str += "for(int grid=0; grid<commondata->NUMGRIDS; grid++) {\n"
+    return_str += (
+        f"commondata->time = time_start + {substep_time_offset_str} * commondata->dt;\n"
+    )
+    return_str += gf_aliases
+
+    return_str += """
+switch (which_MOL_part) {
+  case MOL_PRE_RK_UPDATE: {"""
+
+    # Part 1: RHS evaluation
+    updated_rhs_str = (
+        str(rhs_str)
+        .replace("RK_INPUT_GFS", str(rhs_input_expr).replace("gfsL", "gfs"))
+        .replace("RK_OUTPUT_GFS", str(rhs_output_expr).replace("gfsL", "gfs"))
+    )
+    return_str += updated_rhs_str + "\n"
+
+    return_str += """
+     break;
+  }
+  case MOL_RK_UPDATE: {"""
+
+    # Part 2: RK update
+    if enable_simd:
+        warnings.warn(
+            "enable_simd in MoL is not properly supported -- MoL update loops are not properly bounds checked."
+        )
+        return_str += "#pragma omp parallel for\n"
+        return_str += "for(int i=0;i<Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS1*Nxx_plus_2NGHOSTS2*NUM_EVOL_GFS;i+=simd_width) {{\n"
+    else:
+        return_str += "LOOP_ALL_GFS_GPS(i) {\n"
+
+    var_type = "REAL_SIMD_ARRAY" if enable_simd else "REAL"
+
+    RK_lhs_str_list = [
+        (
+            f"const REAL_SIMD_ARRAY __rhs_exp_{i}"
+            if enable_simd
+            else f"{str(el).replace('gfsL', 'gfs[i]')}"
+        )
+        for i, el in enumerate(RK_lhs_list)
+    ]
+
+    read_list = [
+        read for el in RK_rhs_list for read in list(sp.ordered(el.free_symbols))
+    ]
+    read_list_unique = superfast_uniq(read_list)
+
+    for el in read_list_unique:
+        if str(el) != "commondata->dt":
+            if enable_simd:
+                simd_el = str(el).replace("gfsL", "gfs[i]")
+                return_str += f"const {var_type} {el} = ReadSIMD(&{simd_el});\n"
+            else:
+                return_str += (
+                    f"const {var_type} {el} = {str(el).replace('gfsL', 'gfs[i]')};\n"
+                )
+
+    if enable_simd:
+        return_str += "const REAL_SIMD_ARRAY DT = ConstSIMD(commondata->dt);\n"
+
+    kernel = c_codegen(
+        RK_rhs_list,
+        RK_lhs_str_list,
+        include_braces=False,
+        verbose=False,
+        enable_simd=enable_simd,
+    )
+
+    if enable_simd:
+        return_str += kernel.replace("commondata->dt", "DT")
+        for i, el in enumerate(RK_lhs_list):
+            return_str += (
+                f"  WriteSIMD(&{str(el).replace('gfsL', 'gfs[i]')}, __rhs_exp_{i});\n"
+            )
+
+    else:
+        return_str += kernel
+
+    return_str += "}\n"
+    return_str += """
+    break;
+  }
+"""
+
+    if post_rhs_bcs_str != "":
+        return_str += """
+  case MOL_POST_RK_UPDATE_APPLY_BCS: {
+"""
+        # Part 3: Call post-RHS functions
+        for post_rhs_output in post_rhs_output_list:
+            return_str += post_rhs_bcs_str.replace(
+                "RK_OUTPUT_GFS", str(post_rhs_output).replace("gfsL", "gfs")
+            )
+            return_str += "\n"
+
+        return_str += """
+    break;
+  }
+"""
+    return_str += """
+  case MOL_POST_RK_UPDATE: {
+"""
+    for post_rhs_output in post_rhs_output_list:
+        return_str += post_rhs_string.replace(
+            "RK_OUTPUT_GFS", str(post_rhs_output).replace("gfsL", "gfs")
+        )
+
+    return_str += """
+    break;
+  }
+}
+}
+"""
+
+    return return_str
 
 
 def generate_post_rhs_output_list(
@@ -101,6 +279,55 @@ def generate_post_rhs_output_list(
                     post_rhs = [rhs_output]
 
     return post_rhs  # Return the list of strings representing the post RHS output
+
+
+def generate_rhs_output_exprs(
+    Butcher_dict: Dict[str, Tuple[List[List[Union[sp.Basic, int, str]]], int]],
+    MoL_method: str,
+    rk_substep: int,
+) -> List[str]:
+    """
+    Generate rhs_output_exprs based on the Method of Lines (MoL) method and the current RK substep.
+
+    :param Butcher_dict: A dictionary containing the Butcher tableau and its order.
+    :param MoL_method: The method of lines method name.
+    :param rk_substep: The current Runge-Kutta substep (1-indexed).
+    :return: A list of sympy expressions representing the RHS output expressions.
+    """
+    s = rk_substep - 1  # Convert to 0-indexed
+    rhs_output_expr = []
+
+    if is_diagonal_Butcher(Butcher_dict, MoL_method) and "RK3" in MoL_method:
+        y_n_gfs = "Y_N_GFS"
+        k1_or_y_nplus_a21_k1_or_y_nplus1_running_total_gfs = (
+            "K1_OR_Y_NPLUS_A21_K1_OR_Y_NPLUS1_RUNNING_TOTAL_GFS"
+        )
+        k2_or_y_nplus_a32_k2_gfs = "K2_OR_Y_NPLUS_A32_K2_GFS"
+
+        if s == 0:
+            rhs_output_expr = [k1_or_y_nplus_a21_k1_or_y_nplus1_running_total_gfs]
+        elif s == 1:
+            rhs_output_expr = [k2_or_y_nplus_a32_k2_gfs]
+        elif s == 2:
+            rhs_output_expr = [y_n_gfs]
+    else:
+        if not is_diagonal_Butcher(Butcher_dict, MoL_method):
+            rhs_output_expr = [f"K{rk_substep}_GFS"]
+        else:
+            if MoL_method == "Euler":
+                rhs_output_expr = ["Y_NPLUS1_RUNNING_TOTAL_GFS"]
+            else:
+                if s == 0:
+                    rhs_output_expr = ["K_ODD_GFS"]
+                # For the remaining steps the inputs and ouputs alternate between k_odd and k_even
+                elif s % 2 == 0:
+                    rhs_output_expr = ["K_ODD_GFS"]
+                else:
+                    rhs_output_expr = ["K_EVEN_GFS"]
+
+    return (
+        rhs_output_expr  # Return the list of strings representing the RHS output expr
+    )
 
 
 def register_CFunction_MoL_malloc_diagnostic_gfs() -> None:
@@ -170,6 +397,63 @@ def register_CFunction_MoL_free_memory_diagnostic_gfs() -> None:
         ) from e
 
 
+def register_CFunction_initialize_yn_and_non_yn_gfs_to_nan(
+    Butcher_dict: Dict[str, Tuple[List[List[Union[sp.Basic, int, str]]], int]],
+    MoL_method: str,
+) -> None:
+    """
+    Register the CFunction 'initialize_yn_and_non_yn_gfs_to_nan'.
+    This function initializes yn and non yn gfs to nan to avoid uninitialized memory errors.
+
+    :param Butcher_dict: Dictionary containing Butcher tableau data.
+    :param MoL_method: Method of Lines (MoL) method name.
+    :raises RuntimeError: If an error occurs while registering the CFunction
+    :return None
+    """
+    includes: List[str] = ["BHaH_defines.h"]
+    desc: str = "Initialize yn and non-yn gfs to nan"
+    cfunc_type: str = "void"
+    name: str = "initialize_yn_and_non_yn_gfs_to_nan"
+    params: str = (
+        "const commondata_struct *restrict commondata, const params_struct *restrict params, MoL_gridfunctions_struct *restrict gridfuncs"
+    )
+    body: str = """
+const int Nxx_plus_2NGHOSTS_tot = Nxx_plus_2NGHOSTS0 * Nxx_plus_2NGHOSTS1 * Nxx_plus_2NGHOSTS2;
+for (int i = 0; i < NUM_EVOL_GFS * Nxx_plus_2NGHOSTS_tot; i++) {"""
+    # Generating gridfunction names based on the given MoL method
+    (
+        y_n_gridfunctions,
+        non_y_n_gridfunctions_list,
+        _diagnostic_gridfunctions_point_to,
+        _diagnostic_gridfunctions2_point_to,
+    ) = generate_gridfunction_names(Butcher_dict, MoL_method=MoL_method)
+    # Convert y_n_gridfunctions to a list if it's a string
+    gf_list = (
+        [y_n_gridfunctions] if isinstance(y_n_gridfunctions, str) else y_n_gridfunctions
+    )
+    gf_list.extend(non_y_n_gridfunctions_list)
+    for gf in gf_list:
+        if gf not in ("auxevol_gfs", "diagnostic_output_gfs"):
+            body += f"gridfuncs->{gf.lower()}[i] = NAN;"
+    body += """
+}"""
+
+    try:
+        cfc.register_CFunction(
+            includes=includes,
+            desc=desc,
+            cfunc_type=cfunc_type,
+            name=name,
+            params=params,
+            include_CodeParameters_h=True,
+            body=body,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Error registering CFunction 'initialize_yn_and_non_yn_gfs_to_nan': {str(e)}"
+        ) from e
+
+
 ########################################################################################################################
 # EXAMPLE
 # ODE: y' = f(t,y), y(t_0) = y_0
@@ -200,8 +484,8 @@ def register_CFunction_MoL_step_forward_in_time(
     Butcher_dict: Dict[str, Tuple[List[List[Union[sp.Basic, int, str]]], int]],
     MoL_method: str,
     rhs_string: str = "",
+    post_rhs_bcs_str: str = "",
     post_rhs_string: str = "",
-    post_post_rhs_string: str = "",
     enable_rfm_precompute: bool = False,
     enable_curviBCs: bool = False,
     enable_simd: bool = False,
@@ -212,8 +496,8 @@ def register_CFunction_MoL_step_forward_in_time(
     :param Butcher_dict: A dictionary containing the Butcher tables for various RK-like methods.
     :param MoL_method: The method of lines (MoL) used for time-stepping.
     :param rhs_string: Right-hand side string of the C code.
-    :param post_rhs_string: Input string for post-RHS phase in the C code.
-    :param post_post_rhs_string: String to be used after the post-RHS phase.
+    :param post_rhs_bcs_str: str to apply bcs immediately after RK update
+    :param post_rhs_string: String to be used after the post-RHS phase.
     :param enable_rfm_precompute: Flag to enable reference metric functionality.
     :param enable_curviBCs: Flag to enable curvilinear boundary conditions.
     :param enable_simd: Flag to enable SIMD functionality.
@@ -230,7 +514,7 @@ def register_CFunction_MoL_step_forward_in_time(
     desc = f'Method of Lines (MoL) for "{MoL_method}" method: Step forward one full timestep.\n'
     cfunc_type = "void"
     name = "MoL_step_forward_in_time"
-    params = "commondata_struct *restrict commondata, griddata_struct *restrict griddata, const REAL time_start, const int which_RK_substep"
+    params = "commondata_struct *restrict commondata, griddata_struct *restrict griddata, const REAL time_start, const int which_RK_substep, const int which_MOL_part"
 
     # Code body
     body = f"""
@@ -257,7 +541,7 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
     gf_aliases += "params_struct *restrict params = &griddata[grid].params;\n"
     if enable_rfm_precompute:
         gf_aliases += (
-            "const rfm_struct *restrict rfmstruct = &griddata[grid].rfmstruct;\n"
+            "const rfm_struct *restrict rfmstruct = griddata[grid].rfmstruct;\n"
         )
     else:
         gf_aliases += "REAL *restrict xx[3]; for(int ww=0;ww<3;ww++) xx[ww] = griddata[grid].xx[ww];\n"
@@ -318,13 +602,13 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                     * dt
                     + y_n_gfs
                 ],
-                post_rhs_list=[post_rhs_string],
+                post_rhs_bcs_str=post_rhs_bcs_str,
                 post_rhs_output_list=[
                     k1_or_y_nplus_a21_k1_or_y_nplus1_running_total_gfs
                 ],
                 enable_simd=enable_simd,
                 gf_aliases=gf_aliases,
-                post_post_rhs_string=post_post_rhs_string,
+                post_rhs_string=post_rhs_string,
             )
             + "// -={ END k1 substep }=-\n\n"
         )
@@ -362,14 +646,13 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                     + Butcher[3][2] * k2_or_y_nplus_a32_k2_gfs * dt,
                     Butcher[2][2] * k2_or_y_nplus_a32_k2_gfs * dt + y_n_gfs,
                 ],
-                post_rhs_list=[post_rhs_string, post_rhs_string],
                 post_rhs_output_list=[
                     k2_or_y_nplus_a32_k2_gfs,
                     k1_or_y_nplus_a21_k1_or_y_nplus1_running_total_gfs,
                 ],
                 enable_simd=enable_simd,
                 gf_aliases=gf_aliases,
-                post_post_rhs_string=post_post_rhs_string,
+                post_rhs_string=post_rhs_string,
             )
             + "// -={ END k2 substep }=-\n\n"
         )
@@ -399,11 +682,11 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                     k1_or_y_nplus_a21_k1_or_y_nplus1_running_total_gfs
                     + Butcher[3][3] * y_n_gfs * dt
                 ],
-                post_rhs_list=[post_rhs_string],
+                post_rhs_bcs_str=post_rhs_bcs_str,
                 post_rhs_output_list=[y_n_gfs],
                 enable_simd=enable_simd,
                 gf_aliases=gf_aliases,
-                post_post_rhs_string=post_post_rhs_string,
+                post_rhs_string=post_rhs_string,
             )
             + "// -={ END k3 substep }=-\n\n"
         )
@@ -438,7 +721,6 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                         else:
                             RK_rhs += dt * k_mp1_gfs
 
-                post_rhs = post_rhs_string
                 if s == num_steps - 1:  # If on final step:
                     post_rhs_output = y_n
                 else:  # If on anything but the final step:
@@ -460,11 +742,10 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                     rhs_output_expr=rhs_output,
                     RK_lhs_list=[RK_lhs],
                     RK_rhs_list=[RK_rhs],
-                    post_rhs_list=[post_rhs],
                     post_rhs_output_list=[post_rhs_output],
                     enable_simd=enable_simd,
                     gf_aliases=gf_aliases,
-                    post_post_rhs_string=post_post_rhs_string,
+                    post_rhs_string=post_rhs_string,
                 )}// -={{ END k{str(s + 1)} substep }}=-\n\n"""
                 body += """
           break;
@@ -484,11 +765,11 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                     rhs_output_expr=y_nplus1_running_total,
                     RK_lhs_list=[y_n],
                     RK_rhs_list=[y_n + y_nplus1_running_total * dt],
-                    post_rhs_list=[post_rhs_string],
+                    post_rhs_bcs_str=post_rhs_bcs_str,
                     post_rhs_output_list=[y_n],
                     enable_simd=enable_simd,
                     gf_aliases=gf_aliases,
-                    post_post_rhs_string=post_post_rhs_string,
+                    post_rhs_string=post_rhs_string,
                 )
             else:
                 for s in range(num_steps):
@@ -565,11 +846,11 @@ REAL *restrict {y_n_gridfunctions} = {gf_prefix}{y_n_gridfunctions};
                             rhs_output_expr=rhs_output,
                             RK_lhs_list=RK_lhs_list,
                             RK_rhs_list=RK_rhs_list,
-                            post_rhs_list=[post_rhs_string],
+                            post_rhs_bcs_str=post_rhs_bcs_str,
                             post_rhs_output_list=[post_rhs_output],
                             enable_simd=enable_simd,
                             gf_aliases=gf_aliases,
-                            post_post_rhs_string=post_post_rhs_string,
+                            post_rhs_string=post_rhs_string,
                         )
                         + f"// -={{ END k{s + 1} substep }}=-\n\n"
                     )
@@ -612,12 +893,85 @@ def create_rk_substep_constants(num_steps: int) -> str:
     return "\n".join(f"#define RK_SUBSTEP_K{s+1} {s+1}" for s in range(num_steps))
 
 
+def register_CFunction_MoL_sync_data_defines() -> Tuple[int, int, int]:
+    """
+    Register the CFunction 'MoL_sync_data_defines'.
+    This function sets up data required for communicating gfs between chares.
+    :raises RuntimeError: If an error occurs while registering the CFunction
+    :return: None
+    """
+    includes: List[str] = ["BHaH_defines.h"]
+    desc: str = "Define data needed for syncing data across chares"
+    cfunc_type: str = "void"
+    name: str = "MoL_sync_data_defines"
+    params: str = "MoL_gridfunctions_struct *restrict gridfuncs"
+
+    sync_evol_list: List[str] = []
+    num_sync_evol_gfs: int = 0
+
+    sync_auxevol_list: List[str] = []
+    num_sync_auxevol_gfs: int = 0
+
+    sync_aux_list: List[str] = []
+    num_sync_aux_gfs: int = 0
+
+    for gf, gf_class_obj in glb_gridfcs_dict.items():
+        gf_name = gf.upper()
+        if (
+            isinstance(gf_class_obj, (BHaHGridFunction))
+            and gf_class_obj.sync_gf_in_superB
+        ):
+            if gf_class_obj.group == "EVOL":
+                num_sync_evol_gfs += 1
+                sync_evol_list.append(gf_name)
+            elif gf_class_obj.group == "AUXEVOL":
+                num_sync_auxevol_gfs += 1
+                sync_auxevol_list.append(gf_name)
+            # sync of psi4 is needed for cylindrical-like coords
+            elif gf_class_obj.group == "AUX" and gf_name in ["PSI4_RE", "PSI4_IM"]:
+                num_sync_aux_gfs += 1
+                sync_aux_list.append(gf_name)
+
+    body: str = f"""
+gridfuncs->num_evol_gfs_to_sync = {num_sync_evol_gfs};
+gridfuncs->num_auxevol_gfs_to_sync = {num_sync_auxevol_gfs};
+gridfuncs->num_aux_gfs_to_sync = {num_sync_aux_gfs};
+gridfuncs->max_sync_gfs = MAX3(gridfuncs->num_evol_gfs_to_sync, gridfuncs->num_auxevol_gfs_to_sync, gridfuncs->num_aux_gfs_to_sync);
+"""
+
+    for i, gf in enumerate(sync_evol_list):
+        body += f"gridfuncs->evol_gfs_to_sync[{i}] = {gf.upper()}GF;\n"
+
+    if num_sync_auxevol_gfs != 0:
+        for i, gf in enumerate(sync_auxevol_list):
+            body += f"gridfuncs->auxevol_gfs_to_sync[{i}] = {gf.upper()}GF;\n"
+
+    if num_sync_aux_gfs != 0:
+        for i, gf in enumerate(sync_aux_list):
+            body += f"gridfuncs->aux_gfs_to_sync[{i}] = {gf.upper()}GF;\n"
+
+    try:
+        cfc.register_CFunction(
+            includes=includes,
+            desc=desc,
+            cfunc_type=cfunc_type,
+            name=name,
+            params=params,
+            body=body,
+        )
+        return num_sync_evol_gfs, num_sync_auxevol_gfs, num_sync_aux_gfs
+    except Exception as e:
+        raise RuntimeError(
+            f"Error registering CFunction 'MoL_malloc_diagnostic_gfs': {str(e)}"
+        ) from e
+
+
 # Register all the CFunctions and NRPy basic defines
 def register_CFunctions(
     MoL_method: str = "RK4",
     rhs_string: str = "rhs_eval(Nxx, Nxx_plus_2NGHOSTS, dxx, RK_INPUT_GFS, RK_OUTPUT_GFS);",
-    post_rhs_string: str = "apply_bcs(Nxx, Nxx_plus_2NGHOSTS, RK_OUTPUT_GFS);",
-    post_post_rhs_string: str = "",
+    post_rhs_bcs_str: str = "apply_bcs(Nxx, Nxx_plus_2NGHOSTS, RK_OUTPUT_GFS);",
+    post_rhs_string: str = "",
     enable_rfm_precompute: bool = False,
     enable_curviBCs: bool = False,
     enable_simd: bool = False,
@@ -628,8 +982,8 @@ def register_CFunctions(
 
     :param MoL_method: The method to be used for MoL. Default is 'RK4'.
     :param rhs_string: RHS function call as string. Default is "rhs_eval(Nxx, Nxx_plus_2NGHOSTS, dxx, RK_INPUT_GFS, RK_OUTPUT_GFS);"
-    :param post_rhs_string: Post-RHS function call as string. Default is "apply_bcs(Nxx, Nxx_plus_2NGHOSTS, RK_OUTPUT_GFS);"
-    :param post_post_rhs_string: Post-post-RHS function call as string. Default is an empty string.
+    :param post_rhs_bcs_str: str to apply bcs immediately after RK update
+    :param post_rhs_string: Post-post-RHS function call as string. Default is an empty string.
     :param enable_rfm_precompute: Enable reference metric support. Default is False.
     :param enable_curviBCs: Enable curvilinear boundary conditions. Default is False.
     :param enable_simd: Enable Single Instruction, Multiple Data (SIMD). Default is False.
@@ -638,16 +992,10 @@ def register_CFunctions(
     :return None
 
     Doctests:
-    >>> from nrpy.helpers.generic import compress_string_to_base64, decompress_base64_to_string, diff_strings
+    >>> from nrpy.helpers.generic import validate_strings
     >>> cfc.CFunction_dict.clear()
     >>> register_CFunctions()
-    >>> expected_string = decompress_base64_to_string("/Td6WFoAAATm1rRGAgAhARwAAAAQz1jM4BtPA3JdABGaScZHDxOiAHcc/CXr2duHb+UiUyv83OVALtvJ+o7uK/PoSVGe7rPuvil8asOnzsX/43MrS1REEi/tau4rRkS3klwMCWne6D351BIv83jxwuBwBgfb9aLOiuMaxdzlpat7M5Zzy6cqD3qxMNABQOc2xVV5NC/sFWryHJK7NLtTQZSJAkfrM9dF6qg6pG5p6oN+o9MOcVuOHCVrZ0lCxYx6wuKz2IJ/mMdvxb9kpOoc+n71ZJsMV7tA14+9i8TawSx62Kef1R0clKDrO9YH+vibd5srF5P5WoGfm+g08uXnfSLIrCZTVlckaTd4zcJ/j/ETrlGmNf2QPIoLCc3rXDVD5YqIuXu9tQuCiJj5qqcskdwF8ISs3rfmJyiuZuwEzqVktFH5YliqiMHYvmGDp//2s79Ol3OuLCVPnTA0ERVPb40j1XWofPQqADe+0m8AU2cRhvb8d37SvrWzJbGUxlrOp7mLS4lNPW/69FH/Hwr71Dp+bNwISP51VjYhAG7nH5xvjXFhHE7ZgrFeA1a+Oef+aS4sUt5RZAOc1GpX8L1IPAzgbn6iiKKlKDHcumC/Y4AEIIz0nGeJ33pnft+aYL8ytiUiyPXUfci4UnTipQbvjKiglsjTKQP9Nc3Jy6N2luFsHtKqY+X+GFww2Oy2iJPGt5bGYyXkVzpEtCRNzrzhTiNfBhBXAhDUgsEALbd5ABBQjpH9c+33ySo44k1CFF4b25uMS1IuHKlLi3hRnpreGeYVmkg6eli6GiHvmOxUe80xZxNmUndA4IAlrOv+40jM/xbW26tpIpUti94/BvMTSrWp6DD+fL4RA9CSXavR1sI39JPszxlokx7P/5uJB6wK8tcq2zEBoLYRzQqoqZpCaSJFvcnWBZgi4xpLpQbctJ5iZ4Wxw+ACt3PdbfC56svRMWU/rmF3cTbVEtx21Ekzb57Cq2a6vjN8orrRx9eGnetc2+DmxajcP+bjj3gnZgc/iTbmPIgQol112DC35XEBb+HBlV31lvl09AqGo2Eew2pbHvxgEReCQ6tgmIYPswWNsSP1ETDwdzSC6yMsJHPuUz3ZY8sE4BKOj3fS5kcjETy4iFFcKKiFQjMJulezf6IcgjMWUdPCMPQSqi/u/+0AHZ7k92gARfsZ4H8PoPbAk82vw/EuZTjgpc2fBmAdMkcogAAAAPO6eZ4bIuJCAAGOB9A2AADeXX1TscRn+wIAAAAABFla")
-    >>> returned_string = cfc.CFunction_dict["MoL_step_forward_in_time"].full_function
-    >>> if returned_string != expected_string:
-    ...    compressed_str = compress_string_to_base64(returned_string)
-    ...    error_message = "Trusted MoL_step_forward_in_time.full_function string changed!\n Here's the diff:\n"
-    ...    error_message += "Here's the diff:\n" + diff_strings(expected_string, returned_string) + "\n"
-    ...    raise ValueError(error_message + f"base64-encoded output: {compressed_str}")
+    >>> validate_strings(cfc.CFunction_dict["MoL_step_forward_in_time"].full_function, "superB_MoL")
     """
     Butcher_dict = generate_Butcher_tables()
 
@@ -655,16 +1003,22 @@ def register_CFunctions(
         register_CFunction_MoL_malloc(Butcher_dict, MoL_method, which_gfs)
         register_CFunction_MoL_free_memory(Butcher_dict, MoL_method, which_gfs)
 
+    register_CFunction_initialize_yn_and_non_yn_gfs_to_nan(Butcher_dict, MoL_method)
+
     register_CFunction_MoL_malloc_diagnostic_gfs()
     register_CFunction_MoL_free_memory_diagnostic_gfs()
+
+    (num_evol_gfs_to_sync, num_auxevol_gfs_to_sync, num_aux_gfs_to_sync) = (
+        register_CFunction_MoL_sync_data_defines()
+    )
 
     if register_MoL_step_forward_in_time:
         register_CFunction_MoL_step_forward_in_time(
             Butcher_dict,
             MoL_method,
             rhs_string,
+            post_rhs_bcs_str,
             post_rhs_string,
-            post_post_rhs_string,
             enable_rfm_precompute=enable_rfm_precompute,
             enable_curviBCs=enable_curviBCs,
             enable_simd=enable_simd,
@@ -688,6 +1042,13 @@ def register_CFunctions(
     )
     gf_list.extend(non_y_n_gridfunctions_list)
 
+    # Define constants for diagnostic gfs also since they do not point to other gfs in superB
+    gf_list.append("diagnostic_output_gfs")
+
+    # Define constants to keep synching of y n gfs during initial data distinct
+    gf_list.append("y_n_gfs_initialdata_part1")
+    gf_list.append("y_n_gfs_initialdata_part2")
+
     gf_constants = create_gf_constants(gf_list)
 
     rk_substep_constants = create_rk_substep_constants(
@@ -696,8 +1057,15 @@ def register_CFunctions(
 
     # Step 3.b: Create MoL_timestepping struct:
     BHaH_defines_h.register_BHaH_defines(
-        "nrpy.infrastructures.BHaH.MoLtimestepping.MoL",
+        "nrpy.infrastructures.BHaH.MoLtimestepping.MoL_register_all",
         f"typedef struct __MoL_gridfunctions_struct__ {{\n"
+        f"""int num_evol_gfs_to_sync;
+        int num_auxevol_gfs_to_sync;
+        int num_aux_gfs_to_sync;
+        int max_sync_gfs;
+        int evol_gfs_to_sync[{num_evol_gfs_to_sync}];
+        int auxevol_gfs_to_sync[{num_auxevol_gfs_to_sync}];
+        int aux_gfs_to_sync[{num_aux_gfs_to_sync}];\n"""
         f"REAL *restrict {y_n_gridfunctions};\n"
         + "".join(f"REAL *restrict {gfs};\n" for gfs in non_y_n_gridfunctions_list)
         + r"""REAL *restrict diagnostic_output_gfs;

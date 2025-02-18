@@ -33,7 +33,6 @@ def register_CFunction_exact_ADM_ID_function(
     BU: List[sp.Expr],
     gammaDD: List[List[sp.Expr]],
     KDD: List[List[sp.Expr]],
-    fp_type: str = "double",
 ) -> None:
     """
     Register C function for exact ADM initial data of a given ID type.
@@ -45,7 +44,6 @@ def register_CFunction_exact_ADM_ID_function(
     :param BU: partial_t beta upper indices.
     :param gammaDD: The 3-metric with lower indices.
     :param KDD: The extrinsic curvature with lower indices.
-    :param fp_type: Floating point type, e.g., "double".
 
     :raises ValueError: If an unsupported coordinate system is specified, ensuring that the function generation is restricted to supported coordinate systems.
     """
@@ -66,9 +64,8 @@ def register_CFunction_exact_ADM_ID_function(
             ["r", "th", "ph"],
             verbose=False,
             include_braces=True,
-            fp_type=fp_type,
         )
-        body += "const REAL xx0=r, xx1=th, xx2=ph;\n"
+        body += "MAYBE_UNUSED const REAL xx0=r, xx1=th, xx2=ph;\n"
     elif IDCoordSystem == "Cartesian":
         body += r"""  const REAL x=xCart[0], y=xCart[1], z=xCart[2];
 """
@@ -103,7 +100,6 @@ def register_CFunction_exact_ADM_ID_function(
         list_of_output_varnames,
         verbose=False,
         include_braces=False,
-        fp_type=fp_type,
     )
 
     cfc.register_CFunction(
@@ -119,15 +115,13 @@ def register_CFunction_exact_ADM_ID_function(
 
 def Cfunction_ADM_SphorCart_to_Cart(
     IDCoordSystem: str = "Spherical",
-    include_T4UU: bool = False,
-    fp_type: str = "double",
+    enable_T4munu: bool = False,
 ) -> str:
     """
     Convert ADM variables from the spherical or Cartesian basis to the Cartesian basis.
 
     :param IDCoordSystem: The input coordinate system. Defaults to "Spherical".
-    :param include_T4UU: Whether to include the stress-energy tensor. Defaults to False.
-    :param fp_type: Floating point type, e.g., "double".
+    :param enable_T4munu: Whether to include the stress-energy tensor. Defaults to False.
 
     :return: The name of the generated C function.
     """
@@ -150,7 +144,7 @@ def Cfunction_ADM_SphorCart_to_Cart(
                 body += f"  const REAL {var}{j}{k} = initial_data->{var}{j}{k};\n"
         body += "\n"
     # Read stress-energy tensor in spherical or Cartesian basis if desired.
-    if include_T4UU:
+    if enable_T4munu:
         for mu in range(4):
             for nu in range(mu, 4):
                 body += f"const REAL T4SphorCartUU{mu}{nu} = initial_data->T4SphorCartUU{mu}{nu};\n"
@@ -170,7 +164,6 @@ def Cfunction_ADM_SphorCart_to_Cart(
             rfm.Cart_to_xx,
             ["xx0", "xx1", "xx2"],
             include_braces=True,
-            fp_type=fp_type,
         ).replace(
             "Cartx", "xCart[0]"
         ).replace(
@@ -201,7 +194,7 @@ def Cfunction_ADM_SphorCart_to_Cart(
         IDCoordSystem, BSphorCartU
     )
     T4CartUU = cast(Sequence[Sequence[sp.Expr]], ixp.zerorank2(dimension=4))
-    if include_T4UU:
+    if enable_T4munu:
         T4CartUU = jac.basis_transform_4tensorUU_from_time_indep_rfmbasis_to_Cartesian(
             IDCoordSystem, T4SphorCartUU
         )
@@ -219,7 +212,7 @@ def Cfunction_ADM_SphorCart_to_Cart(
             list_of_output_varnames += [f"ADM_Cart_basis->gammaDD{i}{j}"]
             list_of_output_exprs += [KCartDD[i][j]]
             list_of_output_varnames += [f"ADM_Cart_basis->KDD{i}{j}"]
-    if include_T4UU:
+    if enable_T4munu:
         for mu in range(4):
             for nu in range(mu, 4):
                 list_of_output_exprs += [T4CartUU[mu][nu]]
@@ -237,7 +230,6 @@ def Cfunction_ADM_SphorCart_to_Cart(
         list_of_output_varnames,
         verbose=False,
         include_braces=False,
-        fp_type=fp_type,
     )
 
     return cfc.CFunction(
@@ -252,13 +244,12 @@ def Cfunction_ADM_SphorCart_to_Cart(
 
 
 def Cfunction_ADM_Cart_to_BSSN_Cart(
-    include_T4UU: bool = False, fp_type: str = "double"
+    enable_T4munu: bool = False,
 ) -> str:
     """
     Convert ADM variables in the Cartesian basis to BSSN variables in the Cartesian basis.
 
-    :param include_T4UU: Boolean flag to indicate whether to include T4UU or not.
-    :param fp_type: Floating point type, e.g., "double".
+    :param enable_T4munu: Boolean flag to indicate whether to include T4UU or not.
 
     :return: A string representing the full C function.
     """
@@ -295,7 +286,7 @@ def Cfunction_ADM_Cart_to_BSSN_Cart(
             list_of_output_varnames += [f"BSSN_Cart_basis->gammabarDD{i}{j}"]
             list_of_output_exprs += [adm2bssn.AbarDD[i][j]]
             list_of_output_varnames += [f"BSSN_Cart_basis->AbarDD{i}{j}"]
-    if include_T4UU:
+    if enable_T4munu:
         T4CartUU = ixp.declarerank2(
             "ADM_Cart_basis->T4UU", symmetry="sym01", dimension=4
         )
@@ -315,7 +306,6 @@ def Cfunction_ADM_Cart_to_BSSN_Cart(
         list_of_output_varnames,
         verbose=False,
         include_braces=False,
-        fp_type=fp_type,
     )
 
     return cfc.CFunction(
@@ -329,35 +319,27 @@ def Cfunction_ADM_Cart_to_BSSN_Cart(
 
 def Cfunction_BSSN_Cart_to_rescaled_BSSN_rfm(
     CoordSystem: str,
-    include_T4UU: bool = False,
-    fp_type: str = "double",
+    enable_T4munu: bool = False,
 ) -> str:
     """
     Convert Cartesian-basis BSSN vectors/tensors (except lambda^i) to CoordSystem basis, then rescale these BSSN quantities.
 
     :param CoordSystem: Coordinate system to which the variables are to be transformed.
-    :param include_T4UU: Whether to include T4UU tensor in the transformation.
-    :param fp_type: Floating point type, e.g., "double".
+    :param enable_T4munu: Whether to include T4UU tensor in the transformation.
     :return: Returns the generated C code as a string.
     """
     desc = rf"""Cartesian -> {CoordSystem} basis transformation of BSSN vectors/tensors *except* lambda^i.
 After the basis transform, all BSSN quantities are rescaled."""
     cfunc_type = "static void"
     name = "BSSN_Cart_to_rescaled_BSSN_rfm"
-    params = """const commondata_struct *restrict commondata, const params_struct *restrict params, const REAL xCart[3],
+    params = """const commondata_struct *restrict commondata, const params_struct *restrict params, const REAL xxL[3],
                                            const BSSN_Cart_basis_struct *restrict BSSN_Cart_basis,
                                            rescaled_BSSN_rfm_basis_struct *restrict rescaled_BSSN_rfm_basis"""
 
     body = ""
     if CoordSystem != "Cartesian":
         body += r"""
-  REAL xx0,xx1,xx2 __attribute__((unused));  // xx2 might be unused in the case of axisymmetric initial data.
-  {
-    int unused_Cart_to_i0i1i2[3];
-    REAL xx[3];
-    Cart_to_xx_and_nearest_i0i1i2(commondata, params, xCart, xx, unused_Cart_to_i0i1i2);
-    xx0=xx[0];  xx1=xx[1];  xx2=xx[2];
-  }
+  const REAL xx0=xxL[0], xx1=xxL[1], xx2=xxL[2];
 """
 
     # Define the input variables:
@@ -377,7 +359,7 @@ After the basis transform, all BSSN quantities are rescaled."""
         CoordSystem, betaCartU
     )
     BU = jac.basis_transform_vectorU_from_Cartesian_to_rfmbasis(CoordSystem, BCartU)
-    if include_T4UU:
+    if enable_T4munu:
         T4CartUU = ixp.declarerank2(
             "BSSN_Cart_basis->T4UU", symmetry="sym01", dimension=4
         )
@@ -418,7 +400,7 @@ After the basis transform, all BSSN quantities are rescaled."""
             list_of_output_varnames += [f"rescaled_BSSN_rfm_basis->hDD{i}{j}"]
             list_of_output_exprs += [aDD[i][j]]
             list_of_output_varnames += [f"rescaled_BSSN_rfm_basis->aDD{i}{j}"]
-    if include_T4UU:
+    if enable_T4munu:
         for mu in range(4):
             for nu in range(mu, 4):
                 # T4UU IS ASSUMED NOT RESCALED; RESCALINGS ARE HANDLED WITHIN BSSN RHSs, etc.
@@ -437,7 +419,6 @@ After the basis transform, all BSSN quantities are rescaled."""
         list_of_output_varnames,
         verbose=False,
         include_braces=False,
-        fp_type=fp_type,
     )
 
     return cfc.CFunction(
@@ -454,13 +435,12 @@ After the basis transform, all BSSN quantities are rescaled."""
 # Cfunction_initial_data_lambdaU_grid_interior() computes lambdaU from
 # finite-difference derivatives of rescaled metric quantities
 def Cfunction_initial_data_lambdaU_grid_interior(
-    CoordSystem: str, fp_type: str = "double"
+    CoordSystem: str,
 ) -> str:
     """
     Compute lambdaU in the specified coordinate system.
 
     :param CoordSystem: The coordinate system to be used.
-    :param fp_type: Floating point type, e.g., "double".
     :return: The full function generated for computing lambdaU.
     """
     cfunc_type = "static void"
@@ -507,11 +487,9 @@ def Cfunction_initial_data_lambdaU_grid_interior(
             verbose=False,
             include_braces=False,
             enable_fd_codegen=True,
-            fp_type=fp_type,
         ),
         loop_region="interior",
         read_xxs=True,
-        fp_type=fp_type,
     )
 
     return cfc.CFunction(
@@ -529,10 +507,9 @@ def register_CFunction_initial_data_reader__convert_ADM_Sph_or_Cart_to_BSSN(
     CoordSystem: str,
     addl_includes: Optional[List[str]] = None,
     IDCoordSystem: str = "Spherical",
-    include_T4UU: bool = False,
+    enable_T4munu: bool = False,
     enable_fd_functions: bool = False,
     ID_persist_struct_str: str = "",
-    fp_type: str = "double",
 ) -> None:
     """
     Register the CFunction for converting initial ADM data to BSSN variables.
@@ -540,10 +517,9 @@ def register_CFunction_initial_data_reader__convert_ADM_Sph_or_Cart_to_BSSN(
     :param CoordSystem: Coordinate system for output BSSN variables.
     :param addl_includes: Additional header files to include.
     :param IDCoordSystem: Coordinate system for input ADM variables. Defaults to "Spherical".
-    :param include_T4UU: Whether to include stress-energy tensor components.
+    :param enable_T4munu: Whether to include stress-energy tensor components.
     :param enable_fd_functions: Whether to enable finite-difference functions.
     :param ID_persist_struct_str: String for persistent ID structure.
-    :param fp_type: Floating point type, e.g., "double".
 
     :raises ValueError: If `addl_includes` is provided but is not a list, ensuring that additional includes are correctly formatted for inclusion.
     """
@@ -560,7 +536,7 @@ def register_CFunction_initial_data_reader__convert_ADM_Sph_or_Cart_to_BSSN(
   REAL KSphorCartDD00, KSphorCartDD01, KSphorCartDD02;
   REAL KSphorCartDD11, KSphorCartDD12, KSphorCartDD22;
 """
-    if include_T4UU:
+    if enable_T4munu:
         BHd += """
   REAL T4SphorCartUU00,T4SphorCartUU01,T4SphorCartUU02,T4SphorCartUU03;
   REAL                 T4SphorCartUU11,T4SphorCartUU12,T4SphorCartUU13;
@@ -605,7 +581,7 @@ typedef struct __ADM_Cart_basis_struct__ {
   REAL gammaDD00,gammaDD01,gammaDD02,gammaDD11,gammaDD12,gammaDD22;
   REAL KDD00,KDD01,KDD02,KDD11,KDD12,KDD22;
 """
-    if include_T4UU:
+    if enable_T4munu:
         prefunc += T4UU_prettyprint()
     prefunc += "} ADM_Cart_basis_struct;\n"
     ##############
@@ -617,7 +593,7 @@ typedef struct __BSSN_Cart_basis_struct__ {
   REAL gammabarDD00,gammabarDD01,gammabarDD02,gammabarDD11,gammabarDD12,gammabarDD22;
   REAL AbarDD00,AbarDD01,AbarDD02,AbarDD11,AbarDD12,AbarDD22;
 """
-    if include_T4UU:
+    if enable_T4munu:
         prefunc += T4UU_prettyprint()
     prefunc += "} BSSN_Cart_basis_struct;\n"
     ##############
@@ -629,27 +605,21 @@ typedef struct __rescaled_BSSN_rfm_basis_struct__ {
   REAL hDD00,hDD01,hDD02,hDD11,hDD12,hDD22;
   REAL aDD00,aDD01,aDD02,aDD11,aDD12,aDD22;
 """
-    if include_T4UU:
+    if enable_T4munu:
         prefunc += T4UU_prettyprint()
     prefunc += "} rescaled_BSSN_rfm_basis_struct;\n"
     ##############
     ##############
     prefunc += Cfunction_ADM_SphorCart_to_Cart(
         IDCoordSystem=IDCoordSystem,
-        include_T4UU=include_T4UU,
-        fp_type=fp_type,
+        enable_T4munu=enable_T4munu,
     )
-    prefunc += Cfunction_ADM_Cart_to_BSSN_Cart(
-        include_T4UU=include_T4UU, fp_type=fp_type
-    )
+    prefunc += Cfunction_ADM_Cart_to_BSSN_Cart(enable_T4munu=enable_T4munu)
     prefunc += Cfunction_BSSN_Cart_to_rescaled_BSSN_rfm(
         CoordSystem=CoordSystem,
-        include_T4UU=include_T4UU,
-        fp_type=fp_type,
+        enable_T4munu=enable_T4munu,
     )
-    prefunc += Cfunction_initial_data_lambdaU_grid_interior(
-        CoordSystem=CoordSystem, fp_type=fp_type
-    )
+    prefunc += Cfunction_initial_data_lambdaU_grid_interior(CoordSystem=CoordSystem)
 
     desc = f"Read ADM data in the {IDCoordSystem} basis, and output rescaled BSSN data in the {CoordSystem} basis"
     cfunc_type = "void"
@@ -667,6 +637,9 @@ typedef struct __rescaled_BSSN_rfm_basis_struct__ {
   const int Nxx_plus_2NGHOSTS2 = params->Nxx_plus_2NGHOSTS2;
 
   LOOP_OMP("omp parallel for", i0, 0, Nxx_plus_2NGHOSTS0, i1, 0, Nxx_plus_2NGHOSTS1, i2, 0, Nxx_plus_2NGHOSTS2) {
+    // xxL are the local coordinates on the destination grid
+    const REAL xxL[3] = { xx[0][i0], xx[1][i1], xx[2][i2] };
+
     // xCart is the global Cartesian coordinate, which accounts for any grid offsets from the origin.
     REAL xCart[3];
     xx_to_Cart(commondata, params, xx, i0, i1, i2, xCart);
@@ -682,7 +655,7 @@ typedef struct __rescaled_BSSN_rfm_basis_struct__ {
     ADM_Cart_to_BSSN_Cart(commondata, params, xCart, &ADM_Cart_basis, &BSSN_Cart_basis);
 
     rescaled_BSSN_rfm_basis_struct rescaled_BSSN_rfm_basis;
-    BSSN_Cart_to_rescaled_BSSN_rfm(commondata, params, xCart, &BSSN_Cart_basis, &rescaled_BSSN_rfm_basis);
+    BSSN_Cart_to_rescaled_BSSN_rfm(commondata, params, xxL, &BSSN_Cart_basis, &rescaled_BSSN_rfm_basis);
 
     const int idx3 = IDX3(i0, i1, i2);
 """
@@ -693,7 +666,7 @@ typedef struct __rescaled_BSSN_rfm_basis_struct__ {
             gf_list += [f"hDD{i}{j}", f"aDD{i}{j}"]
     for gf in sorted(gf_list):
         body += f"gridfuncs->y_n_gfs[IDX4pt({gf.upper()}GF, idx3)] = rescaled_BSSN_rfm_basis.{gf};\n"
-    if include_T4UU:
+    if enable_T4munu:
         for mu in range(4):
             for nu in range(mu, 4):
                 gf = f"T4UU{mu}{nu}"

@@ -1,5 +1,5 @@
 """
-C function management and registration classes/functions.
+Provide classes and functions for managing and registering C functions.
 
 Authors: Zachariah B. Etienne; zachetie **at** gmail **dot* com
          Ken Sible; ksible **at** outlook **dot* com
@@ -19,13 +19,15 @@ class CFunction:
     :param subdirectory: Path from the root source directory to this C function. Defaults to the current directory.
     :param enable_simd: Boolean to enable SIMD. Default is False.
     :param includes: A list of strings representing include files.
-    :param prefunc: A string representing a pre-function code. Defaults to an empty string.
+    :param prefunc: A string containing code above the core function declaration. Defaults to an empty string.
     :param desc: A description of the function.
+    :param cfunc_decorators: Optional decorators for CFunctions, e.g. CUDA identifiers, templates
     :param cfunc_type: The C type of the function (e.g., void, int). Default is "void".
     :param name: The name of the function.
     :param params: A string representing the function's input parameters. Defaults to an empty string.
     :param include_CodeParameters_h: Boolean to enable C parameters. Default is False.
     :param body: The body of the function.
+    :param postfunc: A string containing code below the core function definition. Defaults to an empty string.
     :param CoordSystem_for_wrapper_func: (BHaH only) Coordinate system for the wrapper function. E.g., if set to Cartesian -> create subdirectory/name() wrapper function and subdirectory/Cartesian/name__rfm__Cartesian(). Defaults to an empty string.
     :param ET_thorn_name: (ET only) Thorn home for this function.
     :param ET_schedule_bins_entries: (ET only) List of (schedule bin, schedule entry) tuples for Einstein Toolkit schedule.ccl.
@@ -36,10 +38,10 @@ class CFunction:
     DocTests:
     >>> func = CFunction(desc="just a test... testing 1,2,3", name="main", params="", body="return 0;")
     >>> print(func.full_function)
-    /*
+    /**
      * just a test... testing 1,2,3
      */
-    void main() { return 0; }
+    void main() { return 0; } // END FUNCTION main
     <BLANKLINE>
     >>> print(func.function_prototype)
     void main();
@@ -56,11 +58,13 @@ class CFunction:
         includes: Optional[List[str]] = None,
         prefunc: str = "",
         desc: str = "",
+        cfunc_decorators: str = "",
         cfunc_type: str = "void",
         name: str = "",
         params: str = "",
         include_CodeParameters_h: bool = False,
         body: str = "",
+        postfunc: str = "",
         CoordSystem_for_wrapper_func: str = "",
         ET_thorn_name: str = "",
         ET_schedule_bins_entries: Optional[List[Tuple[str, str]]] = None,
@@ -90,15 +94,20 @@ class CFunction:
         self.params = params
         self.include_CodeParameters_h = include_CodeParameters_h
         self.body = body
+        self.postfunc = postfunc
         self.CoordSystem_for_wrapper_func = CoordSystem_for_wrapper_func
         self.ET_thorn_name = ET_thorn_name
         self.ET_schedule_bins_entries = ET_schedule_bins_entries
         self.ET_current_thorn_CodeParams_used = ET_current_thorn_CodeParams_used
         self.ET_other_thorn_CodeParams_used = ET_other_thorn_CodeParams_used
+        self.cfunc_decorators = (
+            f"{cfunc_decorators} " if cfunc_decorators != "" else cfunc_decorators
+        )
         self.clang_format_options = clang_format_options
 
-        self.function_prototype = f"{self.cfunc_type} {self.name}({self.params});"
-        self.raw_function, self.full_function = self.generate_full_function()
+        self.function_prototype, self.raw_function, self.full_function = (
+            self.generate_full_function()
+        )
 
     @staticmethod
     def subdirectory_depth(subdirectory: str) -> int:
@@ -127,24 +136,16 @@ class CFunction:
             >>> CFunction.subdirectory_depth('./folder1//folder2///')
             2
         """
-        # Remove the leading "./" if present
-        if subdirectory.startswith("./"):
-            subdirectory = subdirectory[2:]
+        subdirectory = os.path.normpath(subdirectory)
 
-        # Remove the trailing slash if present
-        if subdirectory.endswith("/"):
-            subdirectory = subdirectory[:-1]
-
-        # If subdirectory is a single period, return 0
         if subdirectory == ".":
             return 0
 
-        # Split by slashes and filter out any empty strings
-        folders = [folder for folder in subdirectory.split("/") if folder]
+        folders = [folder for folder in subdirectory.split(os.sep) if folder]
 
         return len(folders)
 
-    def generate_full_function(self) -> Tuple[str, str]:
+    def generate_full_function(self) -> Tuple[str, str, str]:
         """
         Construct a full C function from a class instance.
 
@@ -152,12 +153,6 @@ class CFunction:
         pre-function definitions, function description, function prototype, and body,
         into a single, formatted C function string. It also optionally applies clang-format
         to the generated C function string based on the instance's clang format options.
-
-        The generated C function string includes necessary includes for CodeParameters,
-        infrastructure-specific handling for includes, and any pre-function definitions provided.
-        It formats the description as a C comment block and constructs the function body with
-        proper indentation and formatting. If enabled, clang-format is applied to the generated
-        string using the instance's specified formatting options.
 
         :return: A tuple containing two strings: the raw C function string and the clang-formatted C function string.
 
@@ -192,7 +187,6 @@ class CFunction:
                     complete_func += f"#include {inc}\n"
                 else:
                     if par.parval_from_str("Infrastructure") == "BHaH":
-                        # BHaH-specific:
                         if any(
                             x in inc
                             for x in [
@@ -208,16 +202,22 @@ class CFunction:
             complete_func += f"{self.prefunc}\n"
 
         if self.desc:
-            complete_func += f"/*\n{prefix_with_star(self.desc)}\n*/\n"
+            complete_func += f"/**\n{prefix_with_star(self.desc)}\n*/\n"
 
-        complete_func += f"{self.function_prototype.replace(';', '')} {{\n{include_Cparams_str}{self.body}}}\n"
+        function_prototype = (
+            f"{self.cfunc_decorators}{self.cfunc_type} {self.name}({self.params});"
+        )
+        complete_func += f"{function_prototype.replace(';', '')} {{\n{include_Cparams_str}{self.body}}} // END FUNCTION {self.name}\n"
 
-        return complete_func, clang_format(
-            complete_func, clang_format_options=self.clang_format_options
+        complete_func += f"{self.postfunc}\n"
+
+        return (
+            function_prototype,
+            complete_func,
+            clang_format(complete_func, clang_format_options=self.clang_format_options),
         )
 
 
-# Contains a dictionary of CFunction objects
 CFunction_dict: Dict[str, CFunction] = {}
 
 
@@ -232,8 +232,9 @@ def function_name_and_subdir_with_CoordSystem(
     :param CoordSystem_for_wrapper_func: The coordinate system subdirectory string.
     :return: The coordinate-specific subdirectory and function name.
 
-    >>> function_name_and_subdir_with_CoordSystem(os.path.join("."), "xx_to_Cart", "SinhSpherical")
-    ('./SinhSpherical', 'xx_to_Cart__rfm__SinhSpherical')
+    DocTests:
+        >>> function_name_and_subdir_with_CoordSystem(os.path.join("."), "xx_to_Cart", "SinhSpherical")
+        ('./SinhSpherical', 'xx_to_Cart__rfm__SinhSpherical')
     """
     if CoordSystem_for_wrapper_func:
         return (
@@ -249,11 +250,13 @@ def register_CFunction(
     includes: Optional[List[str]] = None,
     prefunc: str = "",
     desc: str = "",
+    cfunc_decorators: str = "",
     cfunc_type: str = "void",
     name: str = "",
     params: str = "",
     include_CodeParameters_h: bool = False,
     body: str = "",
+    postfunc: str = "",
     CoordSystem_for_wrapper_func: str = "",
     ET_thorn_name: str = "",
     ET_schedule_bins_entries: Optional[List[Tuple[str, str]]] = None,
@@ -267,13 +270,15 @@ def register_CFunction(
     :param subdirectory: Path from the root source directory to this C function. Defaults to the current directory.
     :param enable_simd: Boolean to enable SIMD. Default is False.
     :param includes: A list of strings representing include files.
-    :param prefunc: A string representing a pre-function code. Defaults to an empty string.
+    :param prefunc: A string containing code above the core function declaration. Defaults to an empty string.
     :param desc: A description of the function.
+    :param cfunc_decorators: Optional decorators for CFunctions, e.g. CUDA identifiers, templates
     :param cfunc_type: The C/C++ type of the function (e.g., void, int). Default is "void".
     :param name: The name of the function.
     :param params: A string representing the function's input parameters. Defaults to an empty string.
     :param include_CodeParameters_h: Boolean to enable C parameters. Default is False.
     :param body: The body of the function.
+    :param postfunc: A string containing code after the core function declaration. Defaults to an empty string.
     :param CoordSystem_for_wrapper_func: (BHaH only) Coordinate system for the wrapper function. E.g., if set to Cartesian -> create subdirectory/name() wrapper function and subdirectory/Cartesian/name__rfm__Cartesian(). Defaults to an empty string.
     :param ET_thorn_name: (ET only) Thorn home for this function.
     :param ET_schedule_bins_entries: (ET only) List of tuples for Einstein Toolkit schedule.
@@ -282,6 +287,11 @@ def register_CFunction(
     :param clang_format_options: Options for the clang-format tool. Defaults to "-style={BasedOnStyle: LLVM, ColumnLimit: 150}".
 
     :raises ValueError: If the name is already registered in CFunction_dict.
+
+    DocTests:
+        >>> register_CFunction(name="test_func", desc="test", body="return;")
+        >>> "test_func" in CFunction_dict
+        True
     """
     actual_subdirectory, actual_name = function_name_and_subdir_with_CoordSystem(
         subdirectory, name, CoordSystem_for_wrapper_func
@@ -299,11 +309,13 @@ def register_CFunction(
         params=params,
         include_CodeParameters_h=include_CodeParameters_h,
         body=body,
+        postfunc=postfunc,
         CoordSystem_for_wrapper_func=CoordSystem_for_wrapper_func,
         ET_thorn_name=ET_thorn_name,
         ET_schedule_bins_entries=ET_schedule_bins_entries,
         ET_current_thorn_CodeParams_used=ET_current_thorn_CodeParams_used,
         ET_other_thorn_CodeParams_used=ET_other_thorn_CodeParams_used,
+        cfunc_decorators=cfunc_decorators,
         clang_format_options=clang_format_options,
     )
 

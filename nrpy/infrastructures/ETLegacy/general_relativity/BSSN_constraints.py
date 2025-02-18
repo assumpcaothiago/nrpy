@@ -31,7 +31,6 @@ def register_CFunction_BSSN_constraints(
     enable_simd: bool,
     fd_order: int,
     OMP_collapse: int = 1,
-    fp_type: str = "double",
 ) -> Union[None, pcg.NRPyEnv_type]:
     """
     Register the BSSN constraints evaluation function.
@@ -43,7 +42,6 @@ def register_CFunction_BSSN_constraints(
     :param enable_simd: Whether to enable SIMD instructions.
     :param fd_order: Order of finite difference method
     :param OMP_collapse: Degree of OpenMP loop collapsing.
-    :param fp_type: Floating point type, e.g., "double".
 
     :return: None if in registration phase, else the updated NRPy environment.
     """
@@ -57,7 +55,7 @@ def register_CFunction_BSSN_constraints(
 
     includes = define_standard_includes()
     if enable_simd:
-        includes += [("./simd/simd_intrinsics.h")]
+        includes += ["./simd/simd_intrinsics.h"]
     desc = r"""Evaluate BSSN constraints."""
     name = f"{thorn_name}_BSSN_constraints_order_{fd_order}"
     body = f"""  DECLARE_CCTK_ARGUMENTS_{name};
@@ -105,7 +103,6 @@ def register_CFunction_BSSN_constraints(
             enable_simd=enable_simd,
             enable_fd_functions=True,
             enable_GoldenKernels=True,
-            fp_type=fp_type,
         ),
         loop_region="interior",
         enable_simd=enable_simd,
@@ -141,7 +138,9 @@ if(FD_order == {fd_order}) {{
         cfunc_type="void",
         name=name,
         params="CCTK_ARGUMENTS",
-        prefunc=fin.construct_FD_functions_prefunc(),
+        prefunc=fin.construct_FD_functions_prefunc().replace(
+            "NO_INLINE", "CCTK_ATTRIBUTE_NOINLINE"
+        ),  # This prevents a hang when compiling higher-order FD kernels with certain versions of GCC. I'd prefer not adjusting construct_FD_functions_prefunc() for just this infrastructure.
         body=body,
         ET_thorn_name=thorn_name,
         ET_schedule_bins_entries=[("MoL_PseudoEvolution", schedule)],

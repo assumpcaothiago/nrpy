@@ -36,7 +36,7 @@ from nrpy.infrastructures.BHaH import (
     rfm_precompute,
     rfm_wrapper_functions,
 )
-from nrpy.infrastructures.BHaH.MoLtimestepping import MoL
+from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
 par.set_parval_from_str("Infrastructure", "BHaH")
 
@@ -44,6 +44,7 @@ par.set_parval_from_str("Infrastructure", "BHaH")
 project_name = "spinning_blackhole"
 CoordSystem = "Cartesian"
 IDtype = "UIUCBlackHole"
+# IDtype = "OffsetKerrSchild"
 IDCoordSystem = "Spherical"
 LapseEvolutionOption = "OnePlusLog"
 ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
@@ -57,7 +58,7 @@ Nxx_dict = {
     "Cartesian": [64, 64, 64],
 }
 default_BH_mass = 1.0
-default_BH_spin = +0.8
+default_BH_spin_chi = +0.8
 enable_rfm_precompute = True
 MoL_method = "RK4"
 fd_order = 4
@@ -181,7 +182,7 @@ if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0)
 if not enable_rfm_precompute:
     rhs_string = rhs_string.replace("rfmstruct", "xx")
 
-MoL.register_CFunctions(
+MoL_register_all.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string=rhs_string,
     post_rhs_string="""if (strncmp(commondata->outer_bc_type, "extrapolation", 50) == 0)
@@ -204,7 +205,11 @@ if CoordSystem == "SinhSpherical":
     par.adjust_CodeParam_default("SINHW", 0.4)
 par.adjust_CodeParam_default("eta", GammaDriving_eta)
 par.adjust_CodeParam_default("M", default_BH_mass)
-par.adjust_CodeParam_default("chi", default_BH_spin)
+if IDtype == "UIUCBlackHole":
+    par.adjust_CodeParam_default("chi", default_BH_spin_chi)
+elif IDtype == "OffsetKerrSchild":
+    par.adjust_CodeParam_default("a", default_BH_spin_chi * default_BH_mass)
+
 
 CPs.write_CodeParameters_h_files(project_dir=project_dir)
 CPs.register_CFunctions_params_commondata_struct_set_to_default()
@@ -214,7 +219,7 @@ cmdpar.register_CFunction_cmdline_input_and_parfile_parser(
 )
 Bdefines_h.output_BHaH_defines_h(
     project_dir=project_dir,
-    enable_simd=enable_simd,
+    enable_intrinsics=enable_simd,
     enable_rfm_precompute=enable_rfm_precompute,
     fin_NGHOSTS_add_one_for_upwinding_or_KO=True,
 )
@@ -233,7 +238,7 @@ if enable_simd:
         package="nrpy.helpers",
         filenames_list=["simd_intrinsics.h"],
         project_dir=project_dir,
-        subdirectory="simd",
+        subdirectory="intrinsics",
     )
 Makefile.output_CFunctions_function_prototypes_and_construct_Makefile(
     project_dir=project_dir,

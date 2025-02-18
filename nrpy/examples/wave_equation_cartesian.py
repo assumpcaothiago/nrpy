@@ -30,7 +30,7 @@ from nrpy.equations.wave_equation.WaveEquation_Solutions_InitialData import (
 )
 from nrpy.helpers.generic import copy_files
 from nrpy.infrastructures.BHaH import griddata_commondata
-from nrpy.infrastructures.BHaH.MoLtimestepping import MoL
+from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
 par.set_parval_from_str("Infrastructure", "BHaH")
 
@@ -52,6 +52,7 @@ project_dir = os.path.join("project", project_name)
 shutil.rmtree(project_dir, ignore_errors=True)
 
 par.set_parval_from_str("fd_order", fd_order)
+par.set_parval_from_str("fp_type", fp_type)
 par.adjust_CodeParam_default("t_final", t_final)
 
 
@@ -182,7 +183,6 @@ def register_CFunction_exact_solution_single_Cartesian_point(
         ["*exact_soln_UUGF", "*exact_soln_VVGF"],
         verbose=False,
         include_braces=False,
-        fp_type=fp_type,
     )
     cfc.register_CFunction(
         includes=includes,
@@ -323,7 +323,7 @@ def register_CFunction_rhs_eval() -> None:
     """Register the right-hand side evaluation function for the wave equation with specific parameters."""
     includes = ["BHaH_defines.h"]
     if enable_simd:
-        includes += [os.path.join("simd", "simd_intrinsics.h")]
+        includes += [os.path.join("intrinsics", "simd_intrinsics.h")]
     desc = r"""Set RHSs for wave equation."""
     cfunc_type = "void"
     name = "rhs_eval"
@@ -354,7 +354,6 @@ def register_CFunction_rhs_eval() -> None:
             ],
             enable_fd_codegen=True,
             enable_simd=enable_simd,
-            fp_type=fp_type,
         ),
         loop_region="interior",
         enable_simd=enable_simd,
@@ -440,7 +439,7 @@ register_CFunction_numerical_grids_and_timestep_setup()
 register_CFunction_diagnostics()
 register_CFunction_rhs_eval()
 register_CFunction_apply_bcs()
-MoL.register_CFunctions(
+MoL_register_all.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string="rhs_eval(commondata, params,  RK_INPUT_GFS, RK_OUTPUT_GFS);",
     post_rhs_string="apply_bcs(commondata, params,  RK_OUTPUT_GFS);",
@@ -460,9 +459,8 @@ cmdpar.register_CFunction_cmdline_input_and_parfile_parser(
 )
 Bdefines_h.output_BHaH_defines_h(
     project_dir=project_dir,
-    enable_simd=enable_simd,
+    enable_intrinsics=enable_simd,
     enable_rfm_precompute=False,
-    REAL_means=fp_type,
 )
 main.register_CFunction_main_c(
     MoL_method=MoL_method,
@@ -479,7 +477,7 @@ if enable_simd:
         package="nrpy.helpers",
         filenames_list=["simd_intrinsics.h"],
         project_dir=project_dir,
-        subdirectory="simd",
+        subdirectory="intrinsics",
     )
 
 

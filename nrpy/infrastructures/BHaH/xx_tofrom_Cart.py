@@ -5,6 +5,10 @@ Author: Zachariah B. Etienne
         zachetie **at** gmail **dot* com
 """
 
+from typing import List
+
+import sympy as sp
+
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
 import nrpy.grid as gri
@@ -17,7 +21,6 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
     CoordSystem: str,
     relative_to: str = "local_grid_center",
     gridding_approach: str = "independent grid(s)",
-    fp_type: str = "double",
 ) -> None:
     """
     Construct and register a C function that maps Cartesian coordinates to xx and finds the nearest grid indices.
@@ -31,7 +34,6 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
     :param relative_to: Whether the computation is relative to the "local_grid_center"
                         (default) or "global_grid_center".
     :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
-    :param fp_type: Floating point type, e.g., "double".
     :raises ValueError: When the value of `gridding_approach` is not "independent grid(s)"
                         or "multipatch".
     """
@@ -41,7 +43,6 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
         )
 
     rfm = refmetric.reference_metric[CoordSystem]
-    prefunc = ""
     desc = "Given Cartesian point (x,y,z), this function "
     if gridding_approach == "multipatch":
         desc += "does stuff needed for multipatch, and then "
@@ -68,20 +69,51 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
   Cartz -= Cart_originz;
   {
 """
-    if "theta_adj" in CoordSystem:
-        body += ccg.c_codegen(
-            [rfm.Cart_to_xx[0], rfm.Cart_to_xx[1], rfm.Cart_to_xx[2]],
-            ["xx[0]", "const REAL target_th", "xx[2]"],
-            include_braces=False,
-            fp_type=fp_type,
-        )
-        body += "xx[1] = NewtonRaphson_get_xx1_from_th(params, target_th);\n"
+    if rfm.requires_NewtonRaphson_for_Cart_to_xx:
+        body += "  // First compute analytical coordinate inversions:\n"
+        Cart_to_xx_exprs: List[sp.Expr] = []
+        Cart_to_xx_names: List[str] = []
+        for i in range(3):
+            if rfm.NewtonRaphson_f_of_xx[i] == sp.sympify(0):
+                Cart_to_xx_exprs += [rfm.Cart_to_xx[i]]
+                Cart_to_xx_names += [f"xx[{i}]"]
+        body += ccg.c_codegen(Cart_to_xx_exprs, Cart_to_xx_names, include_braces=False)
+        body += """
+  // Next perform Newton-Raphson iterations as needed:
+  const REAL XX_TOLERANCE = 1e-12;  // that's 1 part in 1e12 dxxi.
+  const REAL F_OF_XX_TOLERANCE = 1e-12;  // tolerance of function for which we're finding the root.
+  const int ITER_MAX = 100;
+  int iter, tolerance_has_been_met=0;
+"""
+        for i in range(3):
+            if rfm.NewtonRaphson_f_of_xx[i] != sp.sympify(0):
+                body += f"""
+  iter=0;
+  REAL xx{i}  = 0.5 * (params->xxmin{i} + params->xxmax{i});
+  while(iter < ITER_MAX && !tolerance_has_been_met) {{
+    REAL f_of_xx{i}, fprime_of_xx{i};
+
+{ccg.c_codegen([rfm.NewtonRaphson_f_of_xx[i], sp.diff(rfm.NewtonRaphson_f_of_xx[i], rfm.xx[i])],
+[f'f_of_xx{i}', f'fprime_of_xx{i}'], include_braces=True, verbose=False)}
+    const REAL xx{i}_np1 = xx{i} - f_of_xx{i} / fprime_of_xx{i};
+
+    if( fabs(xx{i} - xx{i}_np1) <= XX_TOLERANCE * params->dxx{i} && fabs(f_of_xx{i}) <= F_OF_XX_TOLERANCE ) {{
+      tolerance_has_been_met = 1;
+    }}
+    xx{i} = xx{i}_np1;
+    iter++;
+  }} // END Newton-Raphson iterations to compute xx{i}
+  if(iter >= ITER_MAX) {{
+    fprintf(stderr, "ERROR: Newton-Raphson failed for {CoordSystem}: xx{i}, x,y,z = %.15e %.15e %.15e\\n", Cartx,Carty,Cartz);
+    exit(1);
+  }}
+  xx[{i}] = xx{i};
+"""
     else:
         body += ccg.c_codegen(
             [rfm.Cart_to_xx[0], rfm.Cart_to_xx[1], rfm.Cart_to_xx[2]],
             ["xx[0]", "xx[1]", "xx[2]"],
             include_braces=False,
-            fp_type=fp_type,
         )
 
     body += """
@@ -103,7 +135,6 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
 """
     cfc.register_CFunction(
         includes=["BHaH_defines.h"],
-        prefunc=prefunc,
         desc=desc,
         cfunc_type="void",
         CoordSystem_for_wrapper_func=CoordSystem,
@@ -117,14 +148,12 @@ def register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
 def register_CFunction_xx_to_Cart(
     CoordSystem: str,
     gridding_approach: str = "independent grid(s)",
-    fp_type: str = "double",
 ) -> None:
     """
     Convert uniform-grid coordinate (xx[0], xx[1], xx[2]) to the corresponding Cartesian coordinate.
 
     :param CoordSystem: The coordinate system name as a string.
     :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
-    :param fp_type: Floating point type, e.g., "double".
 
     :raises ValueError: If an invalid gridding_approach is provided.
     """
@@ -159,7 +188,6 @@ const REAL xx2 = xx[2][i2];
             rfm.xx_to_Cart[2] + gri.Cart_origin[2],
         ],
         ["xCart[0]", "xCart[1]", "xCart[2]"],
-        fp_type=fp_type,
     )
 
     # Register the C function with the provided details

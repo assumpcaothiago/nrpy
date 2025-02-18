@@ -48,7 +48,6 @@ def register_CFunction_rhs_eval(
     enable_CAKO: bool = False,
     enable_CAHD: bool = False,
     enable_SSL: bool = False,
-    fp_type: str = "double",
     validate_expressions: bool = False,
 ) -> Union[None, Dict[str, Union[mpf, mpc]], pcg.NRPyEnv_type]:
     """
@@ -68,7 +67,6 @@ def register_CFunction_rhs_eval(
     :param enable_CAKO: Whether to enable curvature-aware Kreiss-Oliger dissipation (multiply strength by W).
     :param enable_CAHD: Whether to enable curvature-aware Hamiltonian-constraint damping.
     :param enable_SSL: Whether to enable slow-start lapse.
-    :param fp_type: Floating point type, e.g., "double".
     :param validate_expressions: Whether to validate generated sympy expressions against trusted values.
 
     :raises ValueError: If EvolvedConformalFactor_cf not set to a supported value: {phi, chi, W}.
@@ -86,7 +84,7 @@ def register_CFunction_rhs_eval(
 
     includes = define_standard_includes()
     if enable_simd:
-        includes += [("./simd/simd_intrinsics.h")]
+        includes += ["./simd/simd_intrinsics.h"]
     desc = r"""Set RHSs for the BSSN evolution equations."""
     name = f"{thorn_name}_rhs_eval_order_{fd_order}"
     body = f"""  DECLARE_CCTK_ARGUMENTSX_{name};
@@ -349,7 +347,6 @@ def register_CFunction_rhs_eval(
             upwind_control_vec=betaU,
             enable_fd_functions=True,
             enable_GoldenKernels=True,
-            fp_type=fp_type,
         ),
         loop_region="interior",
         enable_simd=enable_simd,
@@ -389,7 +386,9 @@ if(FD_order == {fd_order}) {{
         cfunc_type="void",
         name=name,
         params="CCTK_ARGUMENTS",
-        prefunc=fin.construct_FD_functions_prefunc(),
+        prefunc=fin.construct_FD_functions_prefunc().replace(
+            "NO_INLINE", "CCTK_ATTRIBUTE_NOINLINE"
+        ),  # This prevents a hang when compiling higher-order FD kernels with certain versions of GCC. I'd prefer not adjusting construct_FD_functions_prefunc() for just this infrastructure.
         body=body,
         ET_thorn_name=thorn_name,
         ET_schedule_bins_entries=[("ODESolvers_RHS", schedule)],

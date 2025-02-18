@@ -1,7 +1,5 @@
 """
-Functions for setting params_struct and commondata_struct parameters.
-
-Set to default values specified when registering them within NRPy+'s CodeParameters.
+Provide functions to set params_struct and commondata_struct parameters to their default values specified when registering them within NRPy+'s CodeParameters.
 
 Author: Zachariah B. Etienne
         zachetie **at** gmail **dot* com
@@ -20,21 +18,31 @@ def register_CFunctions_params_commondata_struct_set_to_default() -> None:
     Register a C function to set code parameters to their default values.
 
     :raises ValueError: If an invalid default value is provided for any parameter. This
-                ensures that all parameters can be correctly initialized in the
-                generated C code.
+        ensures that all parameters can be correctly initialized in the
+        generated C code.
 
-    Doctests:
+    DocTests:
+    >>> _real_array = par.register_CodeParameter("REAL[5]", "CodeParameters_c_files", "bad_real_array", 0.0, commondata=True, add_to_set_CodeParameters_h=True)
+    Traceback (most recent call last):
+    ...
+    ValueError: Parameter 'bad_real_array' of type 'REAL[5]': For REAL or int array parameters, commondata must be True, and add_to_set_CodeParameters_h must be False.
+    >>> _int_array = par.register_CodeParameter("int[3]", "CodeParameters_c_files", "bad_int_array", 42, commondata=False, add_to_set_CodeParameters_h=False)
+    Traceback (most recent call last):
+    ...
+    ValueError: Parameter 'bad_int_array' of type 'int[3]': For REAL or int array parameters, commondata must be True, and add_to_set_CodeParameters_h must be False.
     >>> _, __ = par.register_CodeParameters("REAL", "CodeParameters_c_files", ["a", "pi_three_sigfigs"], [1, 3.14], commondata=True)
     >>> ___ = par.register_CodeParameter("#define", "CodeParameters_c_files", "b", 0)
     >>> _leaveitbe = par.register_CodeParameter("REAL", "CodeParameters_c_files", "leaveitbe", add_to_parfile=False, add_to_set_CodeParameters_h=False)
     >>> _int = par.register_CodeParameter("int", "CodeParameters_c_files", "blah_int", 1, commondata=True, add_to_parfile=True, add_to_set_CodeParameters_h=False)
     >>> _str = par.register_CodeParameter("char[100]", "CodeParameters_c_files", "some_string", "cheese")
     >>> _bool = par.register_CodeParameter("bool", "CodeParameters_c_files", "BHaH_is_amazing", True, add_to_set_CodeParameters_h=True)
+    >>> _real_array = par.register_CodeParameter("REAL[5]", "CodeParameters_c_files", "real_array", 0.0, commondata=True, add_to_set_CodeParameters_h=False)
+    >>> _int_array = par.register_CodeParameter("int[2]", "CodeParameters_c_files", "int_array", [4, 2], commondata=True, add_to_set_CodeParameters_h=False)
     >>> cfc.CFunction_dict.clear()
     >>> register_CFunctions_params_commondata_struct_set_to_default()
     >>> print(cfc.CFunction_dict["params_struct_set_to_default"].full_function)
     #include "BHaH_defines.h"
-    /*
+    /**
      * Set params_struct to default values specified within NRPy+.
      */
     void params_struct_set_to_default(commondata_struct *restrict commondata, griddata_struct *restrict griddata) {
@@ -44,12 +52,12 @@ def register_CFunctions_params_commondata_struct_set_to_default() -> None:
         // Set params_struct variables to default
         params->BHaH_is_amazing = true;               // CodeParameters_c_files::BHaH_is_amazing
         snprintf(params->some_string, 100, "cheese"); // CodeParameters_c_files::some_string
-      }
-    }
+      } // END LOOP over grids
+    } // END FUNCTION params_struct_set_to_default
     <BLANKLINE>
     >>> print(cfc.CFunction_dict["commondata_struct_set_to_default"].full_function)
     #include "BHaH_defines.h"
-    /*
+    /**
      * Set commondata_struct to default values specified within NRPy+.
      */
     void commondata_struct_set_to_default(commondata_struct *restrict commondata) {
@@ -58,7 +66,15 @@ def register_CFunctions_params_commondata_struct_set_to_default() -> None:
       commondata->a = 1;                   // CodeParameters_c_files::a
       commondata->blah_int = 1;            // CodeParameters_c_files::blah_int
       commondata->pi_three_sigfigs = 3.14; // CodeParameters_c_files::pi_three_sigfigs
-    }
+      {
+        REAL temp_val_array[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        memcpy(commondata->real_array, temp_val_array, sizeof(temp_val_array));
+      } // CodeParameters_c_files::real_array
+      {
+        int temp_val_array[] = {4, 2};
+        memcpy(commondata->int_array, temp_val_array, sizeof(temp_val_array));
+      } // CodeParameters_c_files::int_array
+    } // END FUNCTION commondata_struct_set_to_default
     <BLANKLINE>
     """
     for function_name in ["commondata_struct", "params_struct"]:
@@ -87,6 +103,12 @@ def register_CFunctions_params_commondata_struct_set_to_default() -> None:
                     if "char" in CPtype and "[" in CPtype and "]" in CPtype:
                         chararray_size = CPtype.split("[")[1].replace("]", "")
                         c_output = f'snprintf({struct}->{parname}, {chararray_size}, "{defaultval}");{comment}\n'
+                    elif "[" in CPtype and "]" in CPtype:
+                        # Handle REAL[N] and int[N] arrays
+                        c_output = "{\n"
+                        c_output += f"  {CPtype.split('[')[0]} temp_val_array[] = {{ {', '.join(str(x) for x in defaultval)} }};\n"
+                        c_output += f"  memcpy({struct}->{parname}, temp_val_array, sizeof(temp_val_array));\n"
+                        c_output += f"}} {comment}\n"
                     elif isinstance(defaultval, (bool, int, float)) or (
                         CPtype == "REAL" and isinstance(defaultval, str)
                     ):
@@ -101,12 +123,12 @@ def register_CFunctions_params_commondata_struct_set_to_default() -> None:
         body = ""
         if function_name == "params_struct":
             body += r"""// Loop over params structs:
-for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
-  params_struct *restrict params = &griddata[grid].params;
-  // Set params_struct variables to default
+  for(int grid=0; grid<commondata->NUMGRIDS; grid++) {
+    params_struct *restrict params = &griddata[grid].params;
+    // Set params_struct variables to default
 """
             body += "".join(sorted(struct_list))
-            body += "}\n"
+            body += "} // END LOOP over grids\n"
         else:
             body += "\n// Set commondata_struct variables to default\n"
             body += "".join(sorted(struct_list))
@@ -128,21 +150,21 @@ def write_CodeParameters_h_files(
     clang_format_options: str = "-style={BasedOnStyle: LLVM, ColumnLimit: 150}",
 ) -> None:
     r"""
-    Generate C code to set C parameter constants and writes them to files.
+    Generate C code to set C parameter constants and write them to files.
 
     :param project_dir: The path of the project directory.
     :param set_commondata_only: If True, generate code parameters only if `commondata=True`.
-                                Useful for BHaH projects without grids, like SEOBNR.
+        Useful for BHaH projects without grids, like SEOBNR.
     :param clang_format_options: Options for clang_format.
 
-    Doctests:
+    DocTests:
     >>> project_dir = Path("/tmp/tmp_project/")
     >>> write_CodeParameters_h_files(str(project_dir))
     >>> print((project_dir / 'set_CodeParameters.h').read_text())
-    const REAL a = commondata->a;                               // CodeParameters_c_files::a
-    const bool BHaH_is_amazing = params->BHaH_is_amazing;       // CodeParameters_c_files::BHaH_is_amazing
-    const REAL pi_three_sigfigs = commondata->pi_three_sigfigs; // CodeParameters_c_files::pi_three_sigfigs
-    char some_string[100];                                      // CodeParameters_c_files::some_string
+    MAYBE_UNUSED const REAL a = commondata->a;                               // CodeParameters_c_files::a
+    MAYBE_UNUSED const bool BHaH_is_amazing = params->BHaH_is_amazing;       // CodeParameters_c_files::BHaH_is_amazing
+    MAYBE_UNUSED const REAL pi_three_sigfigs = commondata->pi_three_sigfigs; // CodeParameters_c_files::pi_three_sigfigs
+    char some_string[100];                                                   // CodeParameters_c_files::some_string
     {
       // Copy up to 99 characters from params->some_string to some_string
       strncpy(some_string, params->some_string, 100 - 1);
@@ -150,10 +172,10 @@ def write_CodeParameters_h_files(
       some_string[100 - 1] = '\0'; // Properly null terminate char array.
     }
     >>> print((project_dir / 'set_CodeParameters-nopointer.h').read_text())
-    const REAL a = commondata.a;                               // CodeParameters_c_files::a
-    const bool BHaH_is_amazing = params.BHaH_is_amazing;       // CodeParameters_c_files::BHaH_is_amazing
-    const REAL pi_three_sigfigs = commondata.pi_three_sigfigs; // CodeParameters_c_files::pi_three_sigfigs
-    char some_string[100];                                     // CodeParameters_c_files::some_string
+    MAYBE_UNUSED const REAL a = commondata.a;                               // CodeParameters_c_files::a
+    MAYBE_UNUSED const bool BHaH_is_amazing = params.BHaH_is_amazing;       // CodeParameters_c_files::BHaH_is_amazing
+    MAYBE_UNUSED const REAL pi_three_sigfigs = commondata.pi_three_sigfigs; // CodeParameters_c_files::pi_three_sigfigs
+    char some_string[100];                                                  // CodeParameters_c_files::some_string
     {
       // Copy up to 99 characters from params.some_string to some_string
       strncpy(some_string, params.some_string, 100 - 1);
@@ -161,29 +183,28 @@ def write_CodeParameters_h_files(
       some_string[100 - 1] = '\0'; // Properly null terminate char array.
     }
     >>> print((project_dir / 'set_CodeParameters-simd.h').read_text())
-    const REAL NOSIMDa = commondata->a;                                         // CodeParameters_c_files::a
-    const REAL_SIMD_ARRAY a = ConstSIMD(NOSIMDa);                               // CodeParameters_c_files::a
-    const bool BHaH_is_amazing = params->BHaH_is_amazing;                       // CodeParameters_c_files::BHaH_is_amazing
-    const REAL NOSIMDpi_three_sigfigs = commondata->pi_three_sigfigs;           // CodeParameters_c_files::pi_three_sigfigs
-    const REAL_SIMD_ARRAY pi_three_sigfigs = ConstSIMD(NOSIMDpi_three_sigfigs); // CodeParameters_c_files::pi_three_sigfigs
+    const REAL NOSIMDa = commondata->a;                                                      // CodeParameters_c_files::a
+    MAYBE_UNUSED const REAL_SIMD_ARRAY a = ConstSIMD(NOSIMDa);                               // CodeParameters_c_files::a
+    MAYBE_UNUSED const bool BHaH_is_amazing = params->BHaH_is_amazing;                       // CodeParameters_c_files::BHaH_is_amazing
+    const REAL NOSIMDpi_three_sigfigs = commondata->pi_three_sigfigs;                        // CodeParameters_c_files::pi_three_sigfigs
+    MAYBE_UNUSED const REAL_SIMD_ARRAY pi_three_sigfigs = ConstSIMD(NOSIMDpi_three_sigfigs); // CodeParameters_c_files::pi_three_sigfigs
     <BLANKLINE>
     """
     # Create output directory if it doesn't already exist
     project_Path = Path(project_dir)
     project_Path.mkdir(parents=True, exist_ok=True)
+    # Generate C code to set C parameter constants
+    # output to filename "set_CodeParameters.h" if enable_simd==False
+    # or "set_CodeParameters-simd.h" if enable_simd==True
 
-    # Step 4: Generate C code to set C parameter constants
-    #         output to filename "set_CodeParameters.h" if enable_simd==False
-    #         or "set_CodeParameters-simd.h" if enable_simd==True
-
-    # Step 4.a: Output non-SIMD version, set_CodeParameters.h
+    # Output non-SIMD version, set_CodeParameters.h
     def gen_set_CodeParameters(pointerEnable: bool = True) -> str:
         """
         Generate content for set_CodeParameters*.h based on the pointerEnable flag.
 
         :param pointerEnable: A boolean flag indicating whether to access parameters through pointers.
-                If True, parameters are accessed through pointers (struct->param).
-                If False, direct access is assumed (struct.param).
+            If True, parameters are accessed through pointers (struct->param).
+            If False, direct access is assumed (struct.param).
 
         :return: A string containing the C code to be included in set_CodeParameters*.h, setting simulation parameters according to their specification in NRPy+.
         """
@@ -193,18 +214,14 @@ def write_CodeParameters_h_files(
         ):
             if CodeParam.add_to_set_CodeParameters_h:
                 struct = "commondata" if CodeParam.commondata else "params"
-                # Don't output params if set_commondata_only==True
                 if not (set_commondata_only and struct == "params"):
-                    # C parameter type, parameter name
                     CPtype = CodeParam.cparam_type
-                    # For efficiency reasons, set_CodeParameters*.h does not set char arrays;
-                    #   access those from the params struct directly.
                     pointer = "->" if pointerEnable else "."
-
                     comment = f"  // {CodeParam.module}::{CPname}"
                     if "char" in CPtype and "[" in CPtype and "]" in CPtype:
                         # Handle char array C type
                         CPsize = int(CPtype.split("[")[1].split("]")[0])
+                        # Char arrays are never unused; we use them below.
                         Coutput = rf"""char {CPname}[{CPsize}]; {comment}
 {{
   // Copy up to {CPsize-1} characters from {struct}{pointer}{CPname} to {CPname}
@@ -212,9 +229,21 @@ def write_CodeParameters_h_files(
   // Explicitly null-terminate {CPname} to ensure it is a valid C-string
   {CPname}[{CPsize}-1]='\0'; // Properly null terminate char array.
 }}"""
+                    elif "[" in CPtype and "]" in CPtype:
+                        # Handle REAL[N] and int[N] arrays
+                        base_type = CPtype.split("[")[0]
+                        array_size = CPtype.split("[")[1].split("]")[0]
+                        Coutput = rf"""{base_type} {CPname}[{array_size}];{comment}
+{{
+  // Copy {array_size} elements from {struct}{pointer}{CPname} to {CPname}
+  for(int i=0; i<{array_size}; i++) {{
+    {CPname}[i] = {struct}{pointer}{CPname}[i];
+  }}
+}}"""
                     else:
-                        # Handle all other C types
-                        Coutput = f"const {CPtype} {CPname} = {struct}{pointer}{CPname};{comment}\n"
+                        # Handle all other C types.
+                        # MAYBE_UNUSED is used to avoid compiler warnings about unused variables from including set_CodeParameters_simd.h.
+                        Coutput = f"MAYBE_UNUSED const {CPtype} {CPname} = {struct}{pointer}{CPname};{comment}\n"
 
                     returnstring += Coutput
 
@@ -244,13 +273,13 @@ def write_CodeParameters_h_files(
     for CPname, CodeParam in sorted(
         par.glb_code_params_dict.items(), key=lambda x: x[0].lower()
     ):
-        # SIMD does not support char arrays.
+        # SIMD does not support arrays (char, REAL, int, etc.)
         if (
             CodeParam.add_to_set_CodeParameters_h
             and "char" not in CodeParam.cparam_type
+            and "[" not in CodeParam.cparam_type
         ):
             struct = "commondata" if CodeParam.commondata else "params"
-            # Don't output params if set_commondata_only==True
             if not (set_commondata_only and struct == "params"):
                 CPtype = CodeParam.cparam_type
                 comment = f"  // {CodeParam.module}::{CPname}"
@@ -258,12 +287,11 @@ def write_CodeParameters_h_files(
                     c_output = (
                         f"const REAL NOSIMD{CPname} = {struct}->{CPname};{comment}\n"
                     )
-                    c_output += f"const REAL_SIMD_ARRAY {CPname} = ConstSIMD(NOSIMD{CPname});{comment}\n"
+                    c_output += f"MAYBE_UNUSED const REAL_SIMD_ARRAY {CPname} = ConstSIMD(NOSIMD{CPname});{comment}\n"
                     set_CodeParameters_SIMD_str += c_output
                 else:
-                    c_output = (
-                        f"const {CPtype} {CPname} = {struct}->{CPname};{comment}\n"
-                    )
+                    # MAYBE_UNUSED is used to avoid compiler warnings about unused variables from including set_CodeParameters_simd.h.
+                    c_output = f"MAYBE_UNUSED const {CPtype} {CPname} = {struct}->{CPname};{comment}\n"
                     set_CodeParameters_SIMD_str += c_output
 
     header_file_simd_path = project_Path / "set_CodeParameters-simd.h"

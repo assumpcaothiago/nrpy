@@ -43,7 +43,8 @@ from nrpy.infrastructures.BHaH import (
     rfm_precompute,
     rfm_wrapper_functions,
 )
-from nrpy.infrastructures.BHaH.MoLtimestepping import MoL
+from nrpy.infrastructures.BHaH.general_relativity import psi4_C_codegen_library
+from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
 par.set_parval_from_str("Infrastructure", "BHaH")
 
@@ -205,20 +206,18 @@ BCl.register_CFunction_constraints(
     enable_fd_functions=enable_fd_functions,
     OMP_collapse=OMP_collapse,
 )
-swm2sh.register_CFunction_spin_weight_minus2_sph_harmonics()
 
-for which_part in range(3):
-    BCl.register_CFunction_psi4_part(
-        CoordSystem=CoordSystem,
-        which_part=which_part,
-        enable_fd_functions=enable_fd_functions,
-        OMP_collapse=OMP_collapse,
-        output_empty_function=False,
-    )
-BCl.register_CFunction_psi4_tetrad(
+psi4_C_codegen_library.register_CFunction_psi4(
     CoordSystem=CoordSystem,
-    output_empty_function=False,
+    OMP_collapse=OMP_collapse,
 )
+psi4_C_codegen_library.register_CFunction_psi4_metric_deriv_quantities(
+    CoordSystem=CoordSystem, enable_fd_functions=enable_fd_functions
+)
+psi4_C_codegen_library.register_CFunction_psi4_tetrad(
+    CoordSystem=CoordSystem,
+)
+swm2sh.register_CFunction_spin_weight_minus2_sph_harmonics()
 
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
@@ -256,7 +255,7 @@ if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0)
 if not enable_rfm_precompute:
     rhs_string = rhs_string.replace("rfmstruct", "xx")
 
-MoL.register_CFunctions(
+MoL_register_all.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string=rhs_string,
     post_rhs_string="""if (strncmp(commondata->outer_bc_type, "extrapolation", 50) == 0)
@@ -314,7 +313,7 @@ copy_files(
 Bdefines_h.output_BHaH_defines_h(
     additional_includes=[str(Path("TwoPunctures") / Path("TwoPunctures.h"))],
     project_dir=project_dir,
-    enable_simd=enable_simd,
+    enable_intrinsics=enable_simd,
     enable_rfm_precompute=enable_rfm_precompute,
     fin_NGHOSTS_add_one_for_upwinding_or_KO=True,
 )
@@ -339,7 +338,7 @@ if enable_simd:
         package="nrpy.helpers",
         filenames_list=["simd_intrinsics.h"],
         project_dir=project_dir,
-        subdirectory="simd",
+        subdirectory="intrinsics",
     )
 
 Makefile.output_CFunctions_function_prototypes_and_construct_Makefile(
