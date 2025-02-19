@@ -18,7 +18,7 @@ class SourceTerms:
         """
         Compute the expression for a single source.
 
-        :param SourceType: Type of source term. Only valid option: "polytropic_fit"
+        :param SourceType: Type of source term. Only valid option: "polytropic_fit".
         """
 
         # Define symbol for radial variable
