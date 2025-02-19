@@ -34,7 +34,7 @@ class HyperbolicRelaxationCurvilinearRHSs:
         :param enable_rfm_precompute: Whether to enable reference metric precomputation.
 
         .. note::
-            Class variables psi_rhs, chi_rhs, and residual will be set in this function.
+            Class variables psi_rhs, xi_rhs, and residual will be set in this function.
         """
         # Step 1: Set up the reference metric and
         #         quantities derived from the
@@ -55,14 +55,14 @@ class HyperbolicRelaxationCurvilinearRHSs:
         # Step 3: Register gridfunctions that are needed as input
         #         to the scalar wave RHS expressions.
         if "psi" not in gri.glb_gridfcs_dict:
-            psi, chi, alphaconf, tau = gri.register_gridfunctions(
-                ["psi", "chi", "alphaconf", "tau"],
+            psi, xi, alphaconf, tau = gri.register_gridfunctions(
+                ["psi", "xi", "alphaconf", "tau"],
                 group="EVOL",
                 f_infinity=[0.0, 0.0, 0.0, 0.0],
                 wavespeed=[1.0, 1.0, 1.0, 1.0],
             )
         else:
-            psi, chi, alphaconf, tau = sp.symbols("psi, chi, alphaconf, tau", real=True)
+            psi, xi, alphaconf, tau = sp.symbols("psi, xi, alphaconf, tau", real=True)
 
         # Step 4a: Declare the rank-1 indexed expressions \partial_{i},
         #          Derivative variables like these must have an underscore
@@ -108,7 +108,7 @@ class HyperbolicRelaxationCurvilinearRHSs:
         # Step 6: Define right-hand sides for the evolution.
 
         # Step 6a: The RHSs of fundamental variables
-        self.psi_rhs = chi - eta_damping * psi
+        self.psi_rhs = xi - eta_damping * psi
         self.alphaconf_rhs = tau - eta_damping * alphaconf
 
         # Step 6b: The RHSs of the time reduction variables
@@ -116,35 +116,35 @@ class HyperbolicRelaxationCurvilinearRHSs:
         # The Laplacian of both variables u = {psi, alphaconf} is given by:
         #          \hat{g}^{ij} \partial_i \partial_j u - \hat{\Gamma}^i \partial_i u.
         #          ^^^^^^^^^^^^ PART 1 ^^^^^^^^^^^^^^^^ ^^^^^^^^^^ PART 2 ^^^^^^^^^^^
-        self.chi_rhs = sp.sympify(0)
+        self.xi_rhs = sp.sympify(0)
         self.tau_rhs = sp.sympify(0)
         for i in range(3):
             # PART 2:
-            self.chi_rhs -= contractedGammahatU[i] * psi_dD[i]
+            self.xi_rhs -= contractedGammahatU[i] * psi_dD[i]
             self.tau_rhs -= contractedGammahatU[i] * alphaconf_dD[i]
             for j in range(3):
                 # PART 1:
-                self.chi_rhs += rfm.ghatUU[i][j] * psi_dDD[i][j]
+                self.xi_rhs += rfm.ghatUU[i][j] * psi_dDD[i][j]
                 self.tau_rhs += rfm.ghatUU[i][j] * alphaconf_dDD[i][j]
 
         # Step 7.a : Add source terms
-        self.chi_rhs += 2 * sp.pi * ((1 + psi) ** 5) * rho
+        self.xi_rhs += 2 * sp.pi * ((1 + psi) ** 5) * rho
         self.tau_rhs -= 2 * sp.pi * (1 + alphaconf) * ((1 + psi) ** 4) * (rho + 6 * P)
 
-        # Step 8: Set residual before multiplying chi_rhs and tau_rhs by variable_wavespeed**2
-        self.residual_psi = self.chi_rhs
+        # Step 8: Set residual before multiplying xi_rhs and tau_rhs by variable_wavespeed**2
+        self.residual_psi = self.xi_rhs
         self.residual_alphaconf = self.tau_rhs
 
-        # Step 9: Multiply chi_rhs and tau_rhs by variable_wavespeed**2 according to the hyperbolization precription
-        self.chi_rhs *= variable_wavespeed * variable_wavespeed
+        # Step 9: Multiply xi_rhs and tau_rhs by variable_wavespeed**2 according to the hyperbolization precription
+        self.xi_rhs *= variable_wavespeed * variable_wavespeed
         self.tau_rhs *= variable_wavespeed * variable_wavespeed
 
         # Step 10: Create dictionary that maps variable names to symbolic expressions
         self.NRPyElliptic_RHSs_varname_to_expr_dict: Dict[str, sp.Expr] = OrderedDict()
         self.NRPyElliptic_RHSs_varname_to_expr_dict["psi_rhs"] = self.psi_rhs
         self.NRPyElliptic_RHSs_varname_to_expr_dict["alphaconf_rhs"] = self.psi_rhs
-        self.NRPyElliptic_RHSs_varname_to_expr_dict["chi_rhs"] = self.chi_rhs
-        self.NRPyElliptic_RHSs_varname_to_expr_dict["tau_rhs"] = self.chi_rhs
+        self.NRPyElliptic_RHSs_varname_to_expr_dict["xi_rhs"] = self.xi_rhs
+        self.NRPyElliptic_RHSs_varname_to_expr_dict["tau_rhs"] = self.xi_rhs
         # Sort the lists alphabetically by varname:
         self.NRPyElliptic_RHSs_varname_to_expr_dict = OrderedDict(
             sorted(self.NRPyElliptic_RHSs_varname_to_expr_dict.items())
