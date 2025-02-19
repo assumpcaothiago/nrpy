@@ -19,7 +19,6 @@ import nrpy.helpers.parallel_codegen as pcg
 import nrpy.infrastructures.BHaH.diagnostics.output_0d_1d_2d_nearest_gridpoint_slices as out012d
 import nrpy.infrastructures.BHaH.simple_loop as lp
 import nrpy.params as par
-import nrpy.reference_metric as refmetric
 from nrpy.equations.nrpyelliptic.HeadonNS_RHSs import (
     HyperbolicRelaxationCurvilinearRHSs,
 )
