@@ -142,9 +142,11 @@ class HyperbolicRelaxationCurvilinearRHSs:
         # Step 10: Create dictionary that maps variable names to symbolic expressions
         self.NRPyElliptic_RHSs_varname_to_expr_dict: Dict[str, sp.Expr] = OrderedDict()
         self.NRPyElliptic_RHSs_varname_to_expr_dict["psi_rhs"] = self.psi_rhs
-        self.NRPyElliptic_RHSs_varname_to_expr_dict["alphaconf_rhs"] = self.psi_rhs
+        self.NRPyElliptic_RHSs_varname_to_expr_dict["alphaconf_rhs"] = (
+            self.alphaconf_rhs
+        )
         self.NRPyElliptic_RHSs_varname_to_expr_dict["xi_rhs"] = self.xi_rhs
-        self.NRPyElliptic_RHSs_varname_to_expr_dict["tau_rhs"] = self.xi_rhs
+        self.NRPyElliptic_RHSs_varname_to_expr_dict["tau_rhs"] = self.tau_rhs
         # Sort the lists alphabetically by varname:
         self.NRPyElliptic_RHSs_varname_to_expr_dict = OrderedDict(
             sorted(self.NRPyElliptic_RHSs_varname_to_expr_dict.items())
