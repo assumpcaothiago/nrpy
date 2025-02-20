@@ -10,6 +10,16 @@ License: BSD 2-Clause
 # Import needed modules:
 import sympy as sp  # For symbolic computations
 
+from HeadonNSParams import (
+    star_radius,
+    rho_central,
+    n_rho,
+    sigma_rho,
+    P_central,
+    n_P,
+    sigma_P,
+)
+
 
 class SourceTerms:
     """Class sets up and stores sympy expressions for all source terms."""
@@ -24,16 +34,6 @@ class SourceTerms:
         # Define symbol for radial variable
         self.r = sp.Symbol("r", real=True)
 
-        # Define symbols for central density, pressure and star radius
-        self.rho_central, self.P_central, self.star_radius = sp.symbols(
-            "rho_central P_central star_radius", real=True
-        )
-
-        # Define symbols for fit parameters
-        self.n_rho, self.n_P, self.sigma_rho, self.sigma_P = sp.symbols(
-            "n_rho n_P sigma_rho sigma_P", real=True
-        )
-
         if SourceType == "polytropic_fit":
             self._compute_sources()
         else:
@@ -46,15 +46,15 @@ class SourceTerms:
 
         # Compute density
         self.rho = (
-            self.rho_central
-            * (1 - self.r**2 / self.star_radius**2)
-            * sp.exp(-(self.r**self.n_rho) / self.sigma_rho)
+            rho_central
+            * (1 - self.r**2 / star_radius**2)
+            * sp.exp(-(self.r**n_rho) / sigma_rho)
         )
         # Compute pressure
         self.P = (
-            self.P_central
-            * (1 - self.r**2 / self.star_radius**2)
-            * sp.exp(-(self.r**self.n_P) / self.sigma_P)
+            P_central
+            * (1 - self.r**2 / star_radius**2)
+            * sp.exp(-(self.r**n_P) / sigma_P)
         )
 
 
