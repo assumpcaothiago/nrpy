@@ -23,8 +23,7 @@ import nrpy.reference_metric as refmetric
 def register_CFunction_variable_wavespeed_gfs_all_points(
     CoordSystem: str,
 ) -> Union[None, pcg.NRPyEnv_type]:
-    """
-    Register function to compute variable wavespeed based on local grid spacing for a single coordinate system.
+    """Register function to compute variable wavespeed based on local grid spacing for a single coordinate system.
 
     :param CoordSystem: The coordinate system to use in the hyperbolic relaxation.
 
@@ -92,8 +91,7 @@ def register_CFunction_variable_wavespeed_gfs_all_points(
 
 
 def register_CFunction_initialize_constant_auxevol() -> Union[None, pcg.NRPyEnv_type]:
-    """
-    Register function to call all functions that set up AUXEVOL gridfunctions.
+    """Register function to call all functions that set up AUXEVOL gridfunctions.
 
     :return: None if in registration phase, else the updated NRPy environment.
     """
@@ -134,8 +132,7 @@ def register_CFunction_initialize_constant_auxevol() -> Union[None, pcg.NRPyEnv_
 def register_CFunction_compute_L2_norm_of_gridfunction(
     CoordSystem: str,
 ) -> None:
-    """
-    Register function to compute l2-norm of a gridfunction assuming a single grid.
+    """Register function to compute l2-norm of a gridfunction assuming a single grid.
 
     Note that parallel codegen is disabled for this function, as it sometimes causes a
     multiprocess race condition on Python 3.6.7
