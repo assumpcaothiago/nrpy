@@ -42,3 +42,7 @@ n_P = par.register_CodeParameter(
 sigma_P = par.register_CodeParameter(
     "REAL", __name__, "sigma_P", 0.17181675341296368, commondata=True
 )
+
+# Define position of source term along z-axis
+z0_pos = par.register_CodeParameter("REAL", __name__, "z0_pos", 5.0, commondata=True)
+z1_pos = par.register_CodeParameter("REAL", __name__, "z1_pos", -5.0, commondata=True)
