@@ -196,7 +196,7 @@ if(r < integration_radius) {
 
     body += r"""
   // Compute and output the log of the l2-norm.
-  return log10(1e-16 + sqrt(squared_sum / volume_sum));  // 1e-16 + ... avoids log10(0)
+  return (1e-16 + sqrt(squared_sum / volume_sum));  // 1e-16 + ... avoids log10(0)
 """
 
     cfc.register_CFunction(
