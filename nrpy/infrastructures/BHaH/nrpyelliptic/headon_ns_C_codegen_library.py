@@ -157,7 +157,7 @@ def register_CFunction_compute_single_source_term(
     desc = r"""Compute single source term as function of radial distance from the center."""
     cfunc_type = "void"
     name = "compute_single_source_term"
-    params = "const REAL r, const REAL star_radius, REAL *rho, REAL *P"
+    params = "const REAL r, REAL *rho, REAL *P"
 
     source = SourceTerms(SourceType=SourceType)
 
@@ -238,8 +238,8 @@ const REAL r1 = sqrt(x2_plus_y2 + (xCart[2] - z1_pos) * (xCart[2] - z1_pos) );
 REAL rho0, rho1, P0, P1;
 
 // Compute individual source terms using the relative positions r0 and r1
-compute_single_source_term(r0, star_radius, &rho0, &P0);
-compute_single_source_term(r1, star_radius, &rho1, &P1);
+compute_single_source_term(r0, &rho0, &P0);
+compute_single_source_term(r1, &rho1, &P1);
 
 // Compute superposed source terms
 {rho_memaccess} = rho0 + rho1;
