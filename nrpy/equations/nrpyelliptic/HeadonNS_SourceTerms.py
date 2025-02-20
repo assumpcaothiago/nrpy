@@ -10,7 +10,7 @@ License: BSD 2-Clause
 # Import needed modules:
 import sympy as sp  # For symbolic computations
 
-from HeadonNSParams import (
+from nrpy.equations.nrpyelliptic.HeadonNSParams import (
     star_radius,
     rho_central,
     n_rho,
