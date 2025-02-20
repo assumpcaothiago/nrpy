@@ -351,7 +351,7 @@ def register_CFunction_compute_residual_all_points(
 ) -> Union[None, pcg.NRPyEnv_type]:
     """Register the residual evaluation function.
 
-    This function sets the residual of the Hamiltonian constraint in the hyperbolic
+    This function sets the residual of the elliptic PDE in the hyperbolic
     relaxation equation according to the selected coordinate system and specified
     parameters.
 
@@ -369,7 +369,7 @@ def register_CFunction_compute_residual_all_points(
     includes = ["BHaH_defines.h"]
     if enable_simd:
         includes += [str(Path("intrinsics") / "simd_intrinsics.h")]
-    desc = r"""Compute residual of the Hamiltonian constraint for the hyperbolic relaxation equation."""
+    desc = r"""Compute residual of the elliptic PDE for the hyperbolic relaxation equation."""
     cfunc_type = "void"
     name = "compute_residual_all_points"
     params = """const commondata_struct *restrict commondata, const params_struct *restrict params,
@@ -424,6 +424,7 @@ def register_CFunction_compute_residual_all_points(
 
 def register_CFunction_diagnostics(
     CoordSystem: str,
+    enable_rfm_precompute: bool,
     default_diagnostics_out_every: int,
     enable_progress_indicator: bool = False,
     axis_filename_tuple: Tuple[str, str] = (
@@ -467,35 +468,15 @@ def register_CFunction_diagnostics(
         "commondata_struct *restrict commondata, griddata_struct *restrict griddata"
     )
 
-    # Memory access for evolution gridfunctions
-    psi_gf_memaccess = gri.BHaHGridFunction.access_gf("psi", gf_array_name="y_n_gfs")
-    alphaconf_gf_memaccess = gri.BHaHGridFunction.access_gf(
-        "alphaconf", gf_array_name="y_n_gfs"
-    )
-
-    # Memory access for residuals
-    residual_psi_gf_memaccess = gri.BHaHGridFunction.access_gf(
-        "residual_psi", gf_array_name="diagnostic_output_gfs"
-    )
-    residual_alphaconf_gf_memaccess = gri.BHaHGridFunction.access_gf(
-        "residual_alphaconf", gf_array_name="diagnostic_output_gfs"
-    )
-
-    # Memory access for source terms
-    rho_gf_memaccess = gri.BHaHGridFunction.access_gf(
-        "rho", gf_array_name="auxevol_gfs"
-    )
-    P_gf_memaccess = gri.BHaHGridFunction.access_gf("P", gf_array_name="auxevol_gfs")
-
     # fmt: off
     if out_quantities_dict == "default":
         out_quantities_dict = {
-            ("REAL", "num_psi"): psi_gf_memaccess,
-            ("REAL", "num_alphaconf"): alphaconf_gf_memaccess,
-            ("REAL", "num_residual_psi"): residual_psi_gf_memaccess,
-            ("REAL", "num_residual_alphaconf"): residual_alphaconf_gf_memaccess,
-            ("REAL", "num_rho"): rho_gf_memaccess,
-            ("REAL", "num_P"): P_gf_memaccess,
+            ("REAL", "num_psi"): "y_n_gfs[IDX4pt(PSIGF,idx3)]",
+            ("REAL", "num_alphaconf"): "y_n_gfs[IDX4pt(ALPHACONFGF,idx3)]",
+            ("REAL", "num_residual_psi"): "diagnostic_output_gfs[IDX4pt(RESIDUAL_PSIGF,idx3)]",
+            ("REAL", "num_residual_alphaconf"): "diagnostic_output_gfs[IDX4pt(RESIDUAL_ALPHACONFGF,idx3)]",
+            ("REAL", "num_rho"): "auxevol_gfs[IDX4pt(RHOGF,idx3)]",
+            ("REAL", "num_P"): "auxevol_gfs[IDX4pt(PGF,idx3)]",
         }
     if not isinstance(out_quantities_dict, dict):
         raise TypeError(f"out_quantities_dict was initialized to {out_quantities_dict}, which is not a dictionary!")
@@ -527,14 +508,29 @@ def register_CFunction_diagnostics(
   REAL *restrict auxevol_gfs = griddata[grid].gridfuncs.auxevol_gfs;
   REAL *restrict diagnostic_output_gfs = griddata[grid].gridfuncs.diagnostic_output_gfs;
 
-  // Set params and rfm_struct
+  // Set params
   params_struct *restrict params = &griddata[grid].params;
-  const rfm_struct *restrict rfmstruct = griddata[grid].rfmstruct;
 #include "set_CodeParameters.h"
+"""
+    if enable_rfm_precompute:
+        body += r"""  // Set rfm_struct
+  const rfm_struct *restrict rfmstruct = griddata[grid].rfmstruct;
 
   // Compute residuals and store them at diagnostic_output_gfs
   compute_residual_all_points(commondata, params, rfmstruct, auxevol_gfs, y_n_gfs, diagnostic_output_gfs);
+"""
+    else:
+        body += r"""
+  // Set xx
+  REAL *restrict xx[3];
+  for (int ww = 0; ww < 3; ww++)
+    xx[ww] = griddata[grid].xx[ww];
 
+  // Compute residuals and store them at diagnostic_output_gfs
+  compute_residual_all_points(commondata, params, xx, auxevol_gfs, y_n_gfs, diagnostic_output_gfs);
+"""
+
+    body += r"""
   // Set integration radius for l2-norm computation
   const REAL integration_radius = 1000.0;
 
@@ -544,7 +540,7 @@ def register_CFunction_diagnostics(
   const REAL residual_alphaconf = compute_L2_norm_of_gridfunction(commondata, griddata, integration_radius,
                                                                   RESIDUAL_ALPHACONFGF, diagnostic_output_gfs);
 
-  const REAL total_residual = residual_psi + residual_alphaconf;
+  const REAL total_residual = log10(residual_psi + residual_alphaconf);
 
   // Update residual to be used in stop condition
   commondata->log10_current_residual = total_residual;
