@@ -128,8 +128,10 @@ class HyperbolicRelaxationCurvilinearRHSs:
                 self.tau_rhs += rfm.ghatUU[i][j] * alphaconf_dDD[i][j]
 
         # Step 7.a : Add source terms
-        self.xi_rhs += 2 * sp.pi * ((1 + psi) ** 5) * rho
-        self.tau_rhs -= 2 * sp.pi * (1 + alphaconf) * ((1 + psi) ** 4) * (rho + 6 * P)
+        # self.xi_rhs += 2 * sp.pi * ((1 + psi) ** 5) * rho
+        # self.tau_rhs -= 2 * sp.pi * (1 + alphaconf) * ((1 + psi) ** 4) * (rho + 6 * P)
+        self.xi_rhs += 2 * ((1 + psi) ** 5) * rho
+        self.tau_rhs -= 2 * (1 + alphaconf) * ((1 + psi) ** 4) * (rho + 6 * P)
 
         # Step 8: Set residual before multiplying xi_rhs and tau_rhs by variable_wavespeed**2
         self.residual_psi = self.xi_rhs
