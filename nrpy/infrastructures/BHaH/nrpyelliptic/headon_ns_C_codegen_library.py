@@ -157,7 +157,7 @@ def register_CFunction_compute_single_source_term(
     desc = r"""Compute single source term as function of radial distance from the center."""
     cfunc_type = "void"
     name = "compute_single_source_term"
-    params = "const REAL r, REAL *rho, REAL *P"
+    params = "const commondata_struct *restrict commondata, const params_struct *restrict params, const REAL r, REAL *rho, REAL *P"
 
     source = SourceTerms(SourceType=SourceType)
 
@@ -181,7 +181,7 @@ def register_CFunction_compute_single_source_term(
         CoordSystem_for_wrapper_func="",
         name=name,
         params=params,
-        include_CodeParameters_h=False,
+        include_CodeParameters_h=True,
         body=body,
     )
     return cast(pcg.NRPyEnv_type, pcg.NRPyEnv())
@@ -238,8 +238,8 @@ const REAL r1 = sqrt(x2_plus_y2 + (xCart[2] - z1_pos) * (xCart[2] - z1_pos) );
 REAL rho0, rho1, P0, P1;
 
 // Compute individual source terms using the relative positions r0 and r1
-compute_single_source_term(r0, &rho0, &P0);
-compute_single_source_term(r1, &rho1, &P1);
+compute_single_source_term(commondata, params, r0, &rho0, &P0);
+compute_single_source_term(commondata, params, r1, &rho1, &P1);
 
 // Compute superposed source terms
 {rho_memaccess} = rho0 + rho1;
