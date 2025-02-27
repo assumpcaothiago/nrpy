@@ -1204,53 +1204,74 @@ class ReferenceMetric:
             self.Cart_to_xx[2] = phSph
 
         elif self.CoordSystem == "SinhSymTP":
-            rSph = sp.sqrt(self.Cartx**2 + self.Carty**2 + self.Cartz**2)
-            thSph = sp.acos(self.Cartz / rSph)
-            phSph = sp.atan2(self.Carty, self.Cartx)
+            # rSph = sp.sqrt(self.Cartx**2 + self.Carty**2 + self.Cartz**2)
+            # thSph = sp.acos(self.Cartz / rSph)
+            # phSph = sp.atan2(self.Carty, self.Cartx)
 
-            # Mathematica script to compute Cart_to_xx[]
-            #             AA = x1;
-            #             var2 = Sqrt[AA^2 + bScale^2];
-            #             RHOSYMTP = AA*Sin[x2];
-            #             ZSYMTP = var2*Cos[x2];
-            #             Solve[{rSph == Sqrt[RHOSYMTP^2 + ZSYMTP^2],
-            #                    thSph == ArcCos[ZSYMTP/Sqrt[RHOSYMTP^2 + ZSYMTP^2]],
-            #                    phSph == x3},
-            #                   {x1, x2, x3}]
-            self.Cart_to_xx[0] = (
-                sp.sqrt(
-                    -(bScale**2)
-                    + rSph**2
-                    + sp.sqrt(
-                        bScale**4
-                        + 2 * bScale**2 * rSph**2
-                        + rSph**4
-                        - 4 * bScale**2 * rSph**2 * sp.cos(thSph) ** 2
-                    )
-                )
-                * SQRT1_2
-            )  # SQRT1_2 = 1/sqrt(2); define this way for UnitTesting
+            # # Mathematica script to compute Cart_to_xx[]
+            # #             AA = x1;
+            # #             var2 = Sqrt[AA^2 + bScale^2];
+            # #             RHOSYMTP = AA*Sin[x2];
+            # #             ZSYMTP = var2*Cos[x2];
+            # #             Solve[{rSph == Sqrt[RHOSYMTP^2 + ZSYMTP^2],
+            # #                    thSph == ArcCos[ZSYMTP/Sqrt[RHOSYMTP^2 + ZSYMTP^2]],
+            # #                    phSph == x3},
+            # #                   {x1, x2, x3}]
+            # self.Cart_to_xx[0] = (
+            #     sp.sqrt(
+            #         -(bScale**2)
+            #         + rSph**2
+            #         + sp.sqrt(
+            #             bScale**4
+            #             + 2 * bScale**2 * rSph**2
+            #             + rSph**4
+            #             - 4 * bScale**2 * rSph**2 * sp.cos(thSph) ** 2
+            #         )
+            #     )
+            #     * SQRT1_2
+            # )  # SQRT1_2 = 1/sqrt(2); define this way for UnitTesting
 
-            # The sign() function in the following expression ensures the correct root is taken.
-            self.Cart_to_xx[1] = sp.acos(
-                sp.sign(self.Cartz)
-                * (
-                    sp.sqrt(
-                        1
-                        + rSph**2 / bScale**2
-                        - sp.sqrt(
-                            bScale**4
-                            + 2 * bScale**2 * rSph**2
-                            + rSph**4
-                            - 4 * bScale**2 * rSph**2 * sp.cos(thSph) ** 2
-                        )
-                        / bScale**2
-                    )
-                    * SQRT1_2
-                )
-            )  # SQRT1_2 = 1/sqrt(2); define this way for UnitTesting
+            # # The sign() function in the following expression ensures the correct root is taken.
+            # self.Cart_to_xx[1] = sp.acos(
+            #     sp.sign(self.Cartz)
+            #     * (
+            #         sp.sqrt(
+            #             1
+            #             + rSph**2 / bScale**2
+            #             - sp.sqrt(
+            #                 bScale**4
+            #                 + 2 * bScale**2 * rSph**2
+            #                 + rSph**4
+            #                 - 4 * bScale**2 * rSph**2 * sp.cos(thSph) ** 2
+            #             )
+            #             / bScale**2
+            #         )
+            #         * SQRT1_2
+            #     )
+            # )  # SQRT1_2 = 1/sqrt(2); define this way for UnitTesting
 
-            self.Cart_to_xx[2] = phSph
+            # self.Cart_to_xx[2] = phSph
+
+            # Thiago's modification:
+            # The above coordinate inversion is incorrect.
+            # Below I give the correct formulas, which I derived with Mathematica.
+            # FIXME: Documentation to appear.
+
+            x2_plus_y2 = self.Cartx**2 + self.Carty**2
+            r2 = self.Cartx**2 + self.Carty**2 + self.Cartz**2
+
+            expr1 = x2_plus_y2 + (bScale - self.Cartz) ** 2
+            expr2 = x2_plus_y2 + (bScale + self.Cartz) ** 2
+            expr3 = sp.sqrt(expr1 * expr2)
+            expr4 = sp.sqrt(r2 - bScale**2 + expr3)
+            expr5 = sp.sqrt(r2 + bScale**2 + expr3)
+
+            self.Cart_to_xx[0] = SINHWAA * sp.acsch(
+                sp.sqrt(2) * AMAX * sp.csch(1 / SINHWAA) / expr4
+            )
+            self.Cart_to_xx[1] = sp.acos(sp.sqrt(2) * self.Cartz / expr5)
+            self.Cart_to_xx[2] = sp.atan2(self.Carty, self.Cartx)
+
         else:
             raise ValueError(
                 f"prolate-spheroidal-like CoordSystem == {self.CoordSystem} unrecognized"
