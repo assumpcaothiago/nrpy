@@ -23,6 +23,7 @@ import nrpy.infrastructures.BHaH.main_c as main
 import nrpy.infrastructures.BHaH.Makefile_helpers as Makefile
 import nrpy.infrastructures.BHaH.nrpyelliptic.common_C_codegen_library as commonClib
 import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_C_codegen_library as nrpyellClib
+import nrpy.infrastructures.BHaH.interpolation_3d_general__uniform_src_grid as interp3d
 import nrpy.infrastructures.BHaH.numerical_grids_and_timestep as numericalgrids
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
@@ -96,11 +97,11 @@ SINHW = 0.06
 
 OMP_collapse = 1
 enable_checkpointing = True
-enable_rfm_precompute = False  # True
+enable_rfm_precompute = True
 MoL_method = "RK4"
 fd_order = 4
 radiation_BC_fd_order = 4
-enable_simd = False  # True
+enable_simd = False
 parallel_codegen_enable = True
 boundary_conditions_desc = "outgoing radiation"
 list_of_CoordSystems = [CoordSystem]
@@ -150,6 +151,9 @@ numericalgrids.register_CFunctions(
     enable_CurviBCs=True,
 )
 xx_tofrom_Cart.register_CFunction_xx_to_Cart(CoordSystem=CoordSystem)
+xx_tofrom_Cart.register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
+    CoordSystem=CoordSystem
+)
 
 nrpyellClib.register_CFunction_diagnostics(
     CoordSystem=CoordSystem,
@@ -183,6 +187,11 @@ commonClib.register_CFunction_compute_L2_norm_of_gridfunction(CoordSystem=CoordS
 
 # Register function to check for stop conditions
 commonClib.register_CFunction_check_stop_conditions()
+
+# Register interpolation function
+interp3d.register_CFunction_interpolation_3d_general__uniform_src_grid(
+    enable_simd=enable_simd, project_dir=project_dir
+)
 
 if __name__ == "__main__" and parallel_codegen_enable:
     pcg.do_parallel_codegen()
