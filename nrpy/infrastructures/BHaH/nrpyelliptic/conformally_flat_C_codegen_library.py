@@ -10,6 +10,7 @@ from pathlib import Path
 from types import FrameType as FT
 from typing import Dict, Tuple, Union, cast
 
+import dill  # type: ignore
 import sympy as sp
 
 import nrpy.c_codegen as ccg
@@ -27,9 +28,8 @@ from nrpy.equations.nrpyelliptic.ConformallyFlat_SourceTerms import (
     compute_psi_background_and_ADD_times_AUU,
 )
 
+
 # Define functions to set up initial guess
-
-
 def register_CFunction_initial_guess_single_point() -> Union[None, pcg.NRPyEnv_type]:
     """
     Register the C function for initial guess of solution at a single point.
@@ -386,7 +386,7 @@ if(r < integration_radius) {
   volume_sum  += dV;
 } // END if(r < integration_radius)
 """
-    body = rf"""
+    body = r"""
   // Unpack grid parameters assuming a single grid
   const int grid = 0;
   params_struct *restrict params = &griddata[grid].params;
@@ -452,8 +452,8 @@ def register_CFunction_diagnostics(
     :param axis_filename_tuple: Tuple containing filename and variables for axis output.
     :param plane_filename_tuple: Tuple containing filename and variables for plane output.
     :param out_quantities_dict: Dictionary or string specifying output quantities.
-    :return: None if in registration phase, else the updated NRPy environment.
     :raises TypeError: If `out_quantities_dict` is not a dictionary and not set to "default".
+    :return: None if in registration phase, else the updated NRPy environment.
     """
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
@@ -484,20 +484,19 @@ def register_CFunction_diagnostics(
     if not isinstance(out_quantities_dict, dict):
         raise TypeError(f"out_quantities_dict was initialized to {out_quantities_dict}, which is not a dictionary!")
     # fmt: on
-
     for axis in ["y", "z"]:
         out012d.register_CFunction_diagnostics_nearest_1d_axis(
             CoordSystem=CoordSystem,
             out_quantities_dict=out_quantities_dict,
-            filename_tuple=axis_filename_tuple,
             axis=axis,
+            filename_tuple=axis_filename_tuple,
         )
     for plane in ["xy", "yz"]:
         out012d.register_CFunction_diagnostics_nearest_2d_plane(
             CoordSystem=CoordSystem,
             out_quantities_dict=out_quantities_dict,
-            filename_tuple=plane_filename_tuple,
             plane=plane,
+            filename_tuple=plane_filename_tuple,
         )
 
     body = r"""  // Output progress to stderr
