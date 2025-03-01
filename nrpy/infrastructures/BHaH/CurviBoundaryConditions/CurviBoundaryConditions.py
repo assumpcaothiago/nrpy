@@ -11,7 +11,7 @@ Authors: Zachariah B. Etienne
 """
 
 # Step P1: Import needed NRPy+ core modules:
-from typing import List, Tuple
+from typing import List, Set, Tuple
 
 import sympy as sp  # SymPy: The Python computer algebra package upon which NRPy+ depends
 import sympy.codegen.ast as sp_ast
@@ -1590,21 +1590,21 @@ for (int idx2d = tid0; idx2d < num_pure_outer_boundary_points; idx2d+=stride0) {
 #pragma omp for  // threads have been spawned; here we distribute across them
     for (int idx2d = 0; idx2d < num_pure_outer_boundary_points; idx2d++) {
 """
-    kernel_body += f"""const short i0 = pure_outer_bc_array[idx2d].i0;
+    kernel_body += """const short i0 = pure_outer_bc_array[idx2d].i0;
     const short i1 = pure_outer_bc_array[idx2d].i1;
     const short i2 = pure_outer_bc_array[idx2d].i2;
     const short FACEX0 = pure_outer_bc_array[idx2d].FACEX0;
     const short FACEX1 = pure_outer_bc_array[idx2d].FACEX1;
     const short FACEX2 = pure_outer_bc_array[idx2d].FACEX2;
     const int idx3 = IDX3(i0,i1,i2);
-    REAL* xx[3] = {{x0, x1, x2}};
-    for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {{
+    REAL* xx[3] = {x0, x1, x2};
+    for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
         // *** Apply radiation BCs to all outer boundary points. ***
         rhs_gfs[IDX4pt(which_gf, idx3)] = radiation_bcs(params, xx, gfs, rhs_gfs, which_gf,
                                                         custom_wavespeed[which_gf], custom_f_infinity[which_gf],
                                                         i0,i1,i2, FACEX0,FACEX1,FACEX2);
-    }}
-  }}
+    }
+  }
 """.replace(
         "params,", "streamid," if parallelization == "cuda" else "params,"
     ).replace(
@@ -1866,7 +1866,7 @@ def register_BHaH_defines_h(
 
 
 def CurviBoundaryConditions_register_C_functions(
-    list_of_CoordSystems: List[str],
+    set_of_CoordSystems: Set[str],
     parallelization: str = "openmp",
     radiation_BC_fd_order: int = 2,
     set_parity_on_aux: bool = False,
@@ -1875,13 +1875,13 @@ def CurviBoundaryConditions_register_C_functions(
     """
     Register various C functions responsible for handling boundary conditions.
 
-    :param list_of_CoordSystems: List of coordinate systems to use.
+    :param set_of_CoordSystems: Set of coordinate systems to use.
     :param parallelization: Parallelization method to use. Default is "openmp".
     :param radiation_BC_fd_order: Finite differencing order for the radiation boundary conditions. Default is 2.
     :param set_parity_on_aux: If True, set parity on auxiliary grid functions.
     :param set_parity_on_auxevol: If True, set parity on auxiliary evolution grid functions.
     """
-    for CoordSystem in list_of_CoordSystems:
+    for CoordSystem in set_of_CoordSystems:
         # Register C function to set up the boundary condition struct.
         register_CFunction_bcstruct_set_up(
             CoordSystem=CoordSystem, parallelization=parallelization
