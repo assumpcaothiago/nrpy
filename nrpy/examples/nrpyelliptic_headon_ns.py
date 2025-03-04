@@ -35,7 +35,7 @@ from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 # Import specific NRPyElliptic modules
 import nrpy.infrastructures.BHaH.nrpyelliptic.common_C_codegen_library as commonClib
 import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_C_codegen_library as nrpyellClib
-import nrpy.infrastructures.BHaH.interpolation_2d_general__uniform_src_grid as interp3d
+import nrpy.infrastructures.BHaH.interpolation_2d_general__uniform_src_grid as interp2d
 
 
 par.set_parval_from_str("Infrastructure", "BHaH")
@@ -191,7 +191,7 @@ commonClib.register_CFunction_compute_L2_norm_of_gridfunction(CoordSystem=CoordS
 commonClib.register_CFunction_check_stop_conditions()
 
 # Register interpolation function
-interp3d.register_CFunction_interpolation_2d_general__uniform_src_grid(
+interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
     enable_simd=enable_simd, project_dir=project_dir
 )
 
