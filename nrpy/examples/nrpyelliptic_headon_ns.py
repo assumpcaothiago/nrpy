@@ -193,6 +193,7 @@ commonClib.register_CFunction_check_stop_conditions()
 
 # Register function to write minimal NRPyElliptic binary file
 nrpyellbinwriter.register_CFunction_write_NRPYELL_binary()
+nrpyellbinwriter.register_CFunction_read_NRPYELL_binary()
 
 # Register interpolation function
 interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
@@ -294,10 +295,7 @@ post_MoL_step_forward_in_time = r"""    check_stop_conditions(&commondata, gridd
       commondata.checkpoint_every = 1e-4*commondata.dt;
       write_checkpoint(&commondata, griddata);
       // Write NRPyElliptic-specific binary file
-      if (write_NRPYELL_binary(griddata) != 0) {
-        fprintf(stderr, "Error: failed to write NRPyElliptic binary file.\n");
-        exit(EXIT_FAILURE);
-      }
+      write_NRPYELL_binary(griddata);
       break;
     }
 """
