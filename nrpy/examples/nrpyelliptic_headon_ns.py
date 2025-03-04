@@ -36,6 +36,7 @@ from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 import nrpy.infrastructures.BHaH.nrpyelliptic.common_C_codegen_library as commonClib
 import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_C_codegen_library as nrpyellClib
 import nrpy.infrastructures.BHaH.interpolation_2d_general__uniform_src_grid as interp2d
+import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_binary_writer as nrpyellbinwriter
 
 
 par.set_parval_from_str("Infrastructure", "BHaH")
@@ -47,7 +48,7 @@ par.set_parval_from_str("fp_type", fp_type)
 
 grid_physical_size = 1.0e6
 t_final = grid_physical_size  # This parameter is effectively not used in NRPyElliptic
-nn_max = 10000  # Sets the maximum number of relaxation steps
+nn_max = 7001  # Sets the maximum number of relaxation steps
 
 SourceType = "polytropic_fit"
 
@@ -72,7 +73,7 @@ def get_log10_residual_tolerance(fp_type_str: str = "double") -> float:
 
 # Set tolerance for log10(residual) to stop relaxation
 log10_residual_tolerance = get_log10_residual_tolerance(fp_type_str=fp_type)
-default_diagnostics_output_every = 100
+default_diagnostics_output_every = 1001
 default_checkpoint_every = 50.0
 eta_damping = 11.0
 MINIMUM_GLOBAL_WAVESPEED = 0.7
@@ -190,6 +191,9 @@ commonClib.register_CFunction_compute_L2_norm_of_gridfunction(CoordSystem=CoordS
 # Register function to check for stop conditions
 commonClib.register_CFunction_check_stop_conditions()
 
+# Register function to write minimal NRPyElliptic binary file
+nrpyellbinwriter.register_CFunction_write_NRPYELL_binary()
+
 # Register interpolation function
 interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
     enable_simd=enable_simd, project_dir=project_dir
@@ -289,6 +293,11 @@ post_MoL_step_forward_in_time = r"""    check_stop_conditions(&commondata, gridd
       // Force a checkpoint when stop condition is reached.
       commondata.checkpoint_every = 1e-4*commondata.dt;
       write_checkpoint(&commondata, griddata);
+      // Write NRPyElliptic-specific binary file
+      if (write_NRPYELL_binary(griddata) != 0) {
+        fprintf(stderr, "Error: failed to write NRPyElliptic binary file.\n");
+        exit(EXIT_FAILURE);
+      }
       break;
     }
 """
