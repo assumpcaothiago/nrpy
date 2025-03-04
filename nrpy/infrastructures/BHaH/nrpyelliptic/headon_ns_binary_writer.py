@@ -47,6 +47,7 @@ def register_CFunction_write_NRPYELL_binary() -> Union[None, pcg.NRPyEnv_type]:
   const int Nxx_plus_2NGHOSTS1 = params->Nxx_plus_2NGHOSTS1;
   const int Nxx_plus_2NGHOSTS2 = params->Nxx_plus_2NGHOSTS2;
   REAL *restrict y_n_gfs = griddata[0].gridfuncs.y_n_gfs;
+  REAL *restrict auxevol_gfs = griddata[0].gridfuncs.auxevol_gfs;
 
   // Set integers to be written to file
   const int NRPYELL_Nxx_plus_2NGHOSTS0 = params->Nxx_plus_2NGHOSTS0;
@@ -63,23 +64,26 @@ def register_CFunction_write_NRPYELL_binary() -> Union[None, pcg.NRPyEnv_type]:
   const REAL NRPYELL_dxx1 = params->dxx1;
   const REAL NRPYELL_dxx2 = params->dxx2;
 
-  // Set pointers to each grid function array of size NRPYELL_TOTAL_PTS
-  const REAL *NRPYELL_psi_minus_one = &y_n_gfs[IDX4(PSIGF, 0, 0, 0)];
-  const REAL *NRPYELL_alphaconf_minus_one = &y_n_gfs[IDX4(ALPHACONFGF, 0, 0, 0)];
-
   // Set pointers to arrays of coordinates xx[3]
   const REAL *restrict NRPYELL_xx0 = xx[0];
   const REAL *restrict NRPYELL_xx1 = xx[1];
   const REAL *restrict NRPYELL_xx2 = xx[2];
 
-  /* Open file for binary writing */
+  // Set pointers to each auxevol grid function array of size NRPYELL_TOTAL_PTS
+  const REAL *NRPYELL_rho = &auxevol_gfs[IDX4(RHOGF, 0, 0, 0)];
+  const REAL *NRPYELL_P = &auxevol_gfs[IDX4(PGF, 0, 0, 0)];
+
+  // Set pointers to each evol grid function array of size NRPYELL_TOTAL_PTS
+  const REAL *NRPYELL_psi_minus_one = &y_n_gfs[IDX4(PSIGF, 0, 0, 0)];
+  const REAL *NRPYELL_alphaconf_minus_one = &y_n_gfs[IDX4(ALPHACONFGF, 0, 0, 0)];
+
+  // Open file for binary writing
   FILE *fp = fopen("NRPYELL_solution.bin", "wb");
   if (fp == NULL) {
     perror("Error opening file for writing");
     return -1;
   }
-
-  /* Write integer quantities */
+  // Write integer quantities
   if (fwrite(&NRPYELL_Nxx_plus_2NGHOSTS0, sizeof(NRPYELL_Nxx_plus_2NGHOSTS0), 1, fp) != 1) {
     perror("Error writing NRPYELL_Nxx_plus_2NGHOSTS0");
     fclose(fp);
@@ -106,7 +110,7 @@ def register_CFunction_write_NRPYELL_binary() -> Union[None, pcg.NRPyEnv_type]:
     return -1;
   }
 
-  /* Write double quantities */
+  // Write double quantities
   if (fwrite(&NRPYELL_AMAX, sizeof(NRPYELL_AMAX), 1, fp) != 1) {
     perror("Error writing NRPYELL_AMAX");
     fclose(fp);
@@ -138,19 +142,7 @@ def register_CFunction_write_NRPYELL_binary() -> Union[None, pcg.NRPyEnv_type]:
     return -1;
   }
 
-  /* Write grid function arrays (each of size NRPYELL_TOTAL_PTS) */
-  if (fwrite(NRPYELL_psi_minus_one, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
-    perror("Error writing NRPYELL_psi_minus_one");
-    fclose(fp);
-    return -1;
-  }
-  if (fwrite(NRPYELL_alphaconf_minus_one, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
-    perror("Error writing NRPYELL_alphaconf_minus_one");
-    fclose(fp);
-    return -1;
-  }
-
-  /* Write coordinate arrays (sizes are NRPYELL_Nxx_plus_2NGHOSTS0, NRPYELL_Nxx_plus_2NGHOSTS1, NRPYELL_Nxx_plus_2NGHOSTS2) */
+  // Write coordinate arrays (sizes are NRPYELL_Nxx_plus_2NGHOSTS0, NRPYELL_Nxx_plus_2NGHOSTS1, NRPYELL_Nxx_plus_2NGHOSTS2)
   if (fwrite(NRPYELL_xx0, sizeof(REAL), NRPYELL_Nxx_plus_2NGHOSTS0, fp) != (size_t)NRPYELL_Nxx_plus_2NGHOSTS0) {
     perror("Error writing NRPYELL_xx0");
     fclose(fp);
@@ -163,6 +155,30 @@ def register_CFunction_write_NRPYELL_binary() -> Union[None, pcg.NRPyEnv_type]:
   }
   if (fwrite(NRPYELL_xx2, sizeof(REAL), NRPYELL_Nxx_plus_2NGHOSTS2, fp) != (size_t)NRPYELL_Nxx_plus_2NGHOSTS2) {
     perror("Error writing NRPYELL_xx2");
+    fclose(fp);
+    return -1;
+  }
+
+  // Write auxiliary evolution arrays (each of size NRPYELL_TOTAL_PTS)
+  if (fwrite(NRPYELL_rho, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
+    perror("Error writing NRPYELL_rho");
+    fclose(fp);
+    return -1;
+  }
+  if (fwrite(NRPYELL_P, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
+    perror("Error writing NRPYELL_P");
+    fclose(fp);
+    return -1;
+  }
+
+  // Write evolution grid function arrays (each of size NRPYELL_TOTAL_PTS)
+  if (fwrite(NRPYELL_psi_minus_one, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
+    perror("Error writing NRPYELL_psi_minus_one");
+    fclose(fp);
+    return -1;
+  }
+  if (fwrite(NRPYELL_alphaconf_minus_one, sizeof(REAL), NRPYELL_TOTAL_PTS, fp) != (size_t)NRPYELL_TOTAL_PTS) {
+    perror("Error writing NRPYELL_alphaconf_minus_one");
     fclose(fp);
     return -1;
   }
