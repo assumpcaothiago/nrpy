@@ -303,7 +303,7 @@ REAL ** restrict NRPYELL_alphaconf_minus_one
     body = r"""
     FILE * restrict fp = fopen("NRPYELL_solution.bin", "rb");
     if (fp == NULL) {
-        perror("Error opening file for reading");
+        perror("NRPYELL: Error opening file 'NRPYELL_solution.bin' for reading");
         exit(1);
     }
 
