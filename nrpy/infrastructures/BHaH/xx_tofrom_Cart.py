@@ -216,3 +216,96 @@ const REAL xx2 = xx[2][i2];
         body=body,
     )
     return cast(pcg.NRPyEnv_type, pcg.NRPyEnv())
+
+
+def register_CFunction__NRPYELL_Cart_to_xx(
+    CoordSystem: str = "SinhSymTP",
+) -> Union[None, pcg.NRPyEnv_type]:
+    """
+    Construct and register a C function that maps Cartesian coordinates to xx.
+
+    This function generates a C function which, given Cartesian coordinates (x, y, z),
+    computes the corresponding (xx0, xx1, xx2) coordinates. The C function is
+    then registered for later use.
+
+    :param CoordSystem: The coordinate system for the local grid patch.
+    :raises ValueError: When the value of `CoordSystem` is not "SinhSymTP"
+    :return: None if in registration phase, else the updated NRPy environment.
+    """
+
+    if CoordSystem != "SinhSymTP":
+        raise ValueError("NRPYELL interpolation only supports 'SinhSymTP' coordinates.")
+
+    if pcg.pcg_registration_phase():
+        pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
+        return None
+
+    rfm = refmetric.reference_metric[CoordSystem]
+    desc = "Given Cartesian point (x,y,z), this function outputs the corresponding (xx0,xx1,xx2)"
+
+    name = f"NRPYELL_Cart_to_xx__rfm__{CoordSystem}"
+    params = "const REAL AMAX, const REAL bScale, const REAL SINHWAA, const REAL xCart[3], REAL xx[3]"
+
+    body = """
+  // Set (Cartx, Carty, Cartz).
+  REAL Cartx = xCart[0];
+  REAL Carty = xCart[1];
+  REAL Cartz = xCart[2];
+"""
+    if rfm.requires_NewtonRaphson_for_Cart_to_xx:
+        body += "  // First compute analytical coordinate inversions:\n"
+        Cart_to_xx_exprs: List[sp.Expr] = []
+        Cart_to_xx_names: List[str] = []
+        for i in range(3):
+            if rfm.NewtonRaphson_f_of_xx[i] == sp.sympify(0):
+                Cart_to_xx_exprs += [rfm.Cart_to_xx[i]]
+                Cart_to_xx_names += [f"xx[{i}]"]
+        body += ccg.c_codegen(Cart_to_xx_exprs, Cart_to_xx_names, include_braces=False)
+        body += """
+  // Next perform Newton-Raphson iterations as needed:
+  const REAL XX_TOLERANCE = 1e-12;  // that's 1 part in 1e12 dxxi.
+  const REAL F_OF_XX_TOLERANCE = 1e-12;  // tolerance of function for which we're finding the root.
+  const int ITER_MAX = 100;
+  int iter, tolerance_has_been_met=0;
+"""
+        for i in range(3):
+            if rfm.NewtonRaphson_f_of_xx[i] != sp.sympify(0):
+                body += f"""
+  iter=0;
+  REAL xx{i}  = 0.5 * (params->xxmin{i} + params->xxmax{i});
+  while(iter < ITER_MAX && !tolerance_has_been_met) {{
+    REAL f_of_xx{i}, fprime_of_xx{i};
+
+{ccg.c_codegen([rfm.NewtonRaphson_f_of_xx[i], sp.diff(rfm.NewtonRaphson_f_of_xx[i], rfm.xx[i])],
+[f'f_of_xx{i}', f'fprime_of_xx{i}'], include_braces=True, verbose=False)}
+    const REAL xx{i}_np1 = xx{i} - f_of_xx{i} / fprime_of_xx{i};
+
+    if( fabs(xx{i} - xx{i}_np1) <= XX_TOLERANCE * params->dxx{i} && fabs(f_of_xx{i}) <= F_OF_XX_TOLERANCE ) {{
+      tolerance_has_been_met = 1;
+    }}
+    xx{i} = xx{i}_np1;
+    iter++;
+  }} // END Newton-Raphson iterations to compute xx{i}
+  if(iter >= ITER_MAX) {{
+    fprintf(stderr, "ERROR: Newton-Raphson failed for {CoordSystem}: xx{i}, x,y,z = %.15e %.15e %.15e\\n", Cartx,Carty,Cartz);
+    exit(1);
+  }}
+  xx[{i}] = xx{i};
+"""
+    else:
+        body += ccg.c_codegen(
+            [rfm.Cart_to_xx[0], rfm.Cart_to_xx[1], rfm.Cart_to_xx[2]],
+            ["xx[0]", "xx[1]", "xx[2]"],
+            include_braces=False,
+        )
+    cfc.register_CFunction(
+        includes=["BHaH_defines.h"],
+        desc=desc,
+        cfunc_type="void",
+        CoordSystem_for_wrapper_func="",
+        name=name,
+        params=params,
+        include_CodeParameters_h=False,
+        body=body,
+    )
+    return cast(pcg.NRPyEnv_type, pcg.NRPyEnv())
