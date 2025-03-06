@@ -291,13 +291,13 @@ REAL * restrict NRPYELL_SINHWAA,
 REAL * restrict NRPYELL_dxx0,
 REAL * restrict NRPYELL_dxx1,
 REAL * restrict NRPYELL_dxx2,
-REAL ** restrict NRPYELL_xx0,
-REAL ** restrict NRPYELL_xx1,
-REAL ** restrict NRPYELL_xx2,
-REAL ** restrict NRPYELL_rho,
-REAL ** restrict NRPYELL_P,
-REAL ** restrict NRPYELL_psi_minus_one,
-REAL ** restrict NRPYELL_alphaconf_minus_one
+REAL * restrict * NRPYELL_xx0,
+REAL * restrict * NRPYELL_xx1,
+REAL * restrict * NRPYELL_xx2,
+REAL * restrict * NRPYELL_rho,
+REAL * restrict * NRPYELL_P,
+REAL * restrict * NRPYELL_psi_minus_one,
+REAL * restrict * NRPYELL_alphaconf_minus_one
 """
 
     body = r"""
@@ -451,6 +451,19 @@ REAL ** restrict NRPYELL_alphaconf_minus_one
 
     fclose(fp);
     printf("NRPYELL: FINISHED READING 'NRPYELL_solution.bin'\n");
+
+    // Output non-array parameters for verification purposes
+    printf("NRPYELL_Nxx_plus_2NGHOSTS0 = %d\n", *NRPYELL_Nxx_plus_2NGHOSTS0);
+    printf("NRPYELL_Nxx_plus_2NGHOSTS1 = %d\n", *NRPYELL_Nxx_plus_2NGHOSTS1);
+    printf("NRPYELL_Nxx_plus_2NGHOSTS2 = %d\n", *NRPYELL_Nxx_plus_2NGHOSTS2);
+    printf("NRPYELL_NGHOSTS   = %d\n", *NRPYELL_NGHOSTS);
+    printf("NRPYELL_TOTAL_PTS = %d\n", *NRPYELL_TOTAL_PTS);
+    printf("NRPYELL_AMAX    = %6.4e\n", *NRPYELL_AMAX);
+    printf("NRPYELL_bScale  = %6.4e\n", *NRPYELL_bScale);
+    printf("NRPYELL_SINHWAA = %6.4e\n", *NRPYELL_SINHWAA);
+    printf("NRPYELL_dxx0 = %6.4e\n", *NRPYELL_dxx0);
+    printf("NRPYELL_dxx1 = %6.4e\n", *NRPYELL_dxx1);
+    printf("NRPYELL_dxx2 = %6.4e\n", *NRPYELL_dxx2);
 """
 
     postfunc = ""
