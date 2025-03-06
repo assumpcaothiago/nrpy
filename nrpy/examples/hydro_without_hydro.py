@@ -35,21 +35,29 @@ from nrpy.infrastructures.BHaH import (
 )
 from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
+# ----------------------------------------------------------------------------------- #
+#                            NEW NRPYELLIPTIC IMPORTS
+# ----------------------------------------------------------------------------------- #
+import nrpy.infrastructures.BHaH.interpolation_2d_general__uniform_src_grid as interp2d
+import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_binary_writer as nrpyellbinwriter
+import nrpy.infrastructures.BHaH.nrpyelliptic.NRPYELL_interp as NRPYELL_interp
+
 par.set_parval_from_str("Infrastructure", "BHaH")
 
 # Code-generation-time parameters:
 project_name = "hydro_without_hydro"
-IDtype = "TOVola_interp"
-CoordSystem = "Spherical"
+IDtype = "NRPYELL_interp"  # "NRPYELL_interp" or "TOVola_interp"
+CoordSystem = "SinhCylindrical"
 LapseEvolutionOption = "HarmonicSlicing"
 ShiftEvolutionOption = "Frozen"
 fp_type = "double"
-grid_physical_size = 7.5
+grid_physical_size = 100.0
 diagnostics_output_every = 0.25
 default_checkpoint_every = 2.0
-t_final = 1.0 * grid_physical_size
+t_final = 1.0e-5 * grid_physical_size
 Nxx_dict = {
-    "Spherical": [72, 12, 2],
+    "SinhCylindrical": [128, 2, 600],
+    # "Spherical": [72, 12, 2],
     # "SinhSpherical": [72, 12, 2],
     # "Cartesian": [64, 64, 64],
 }
@@ -89,18 +97,15 @@ par.adjust_CodeParam_default("t_final", t_final)
 #########################################################
 # STEP 2: Declare core C functions & register each to
 #         cfc.CFunction_dict["function_name"]
+TOVinterp.register_CFunction_TOVola_TOV_interpolate_1D()
 TOVinterp.register_CFunction_TOVola_interp()
 TOVsolve.register_CFunction_TOVola_solve()
-BCl.register_CFunction_initial_data(
-    CoordSystem=CoordSystem,
-    IDtype=IDtype,
-    IDCoordSystem="Spherical",
-    enable_checkpointing=True,
-    ID_persist_struct_str=IDps.ID_persist_str(),
-    populate_ID_persist_struct_str=r"""
+
+ID_persist_struct_str = IDps.ID_persist_str()
+populate_ID_persist_struct_str = r"""
 TOVola_solve(commondata, &ID_persist);
-""",
-    free_ID_persist_struct_str=r"""
+"""
+free_ID_persist_struct_str = r"""
 {
   free(ID_persist.r_Schw_arr);
   free(ID_persist.rho_energy_arr);
@@ -110,8 +115,39 @@ TOVola_solve(commondata, &ID_persist);
   free(ID_persist.expnu_arr);
   free(ID_persist.exp4phi_arr);
   free(ID_persist.r_iso_arr);
-}
-""",
+"""
+
+if IDtype == "NRPYELL_interp":
+    ID_persist_struct_str += NRPYELL_interp.ID_persist_str()
+    populate_ID_persist_struct_str += r"""
+    // Read NRPyElliptic initial data
+    read_NRPYELL_binary(&ID_persist.NRPYELL_Nxx_plus_2NGHOSTS0, &ID_persist.NRPYELL_Nxx_plus_2NGHOSTS1, &ID_persist.NRPYELL_Nxx_plus_2NGHOSTS2,
+                        &ID_persist.NRPYELL_NGHOSTS, &ID_persist.NRPYELL_TOTAL_PTS,
+                        &ID_persist.NRPYELL_AMAX, &ID_persist.NRPYELL_bScale, &ID_persist.NRPYELL_SINHWAA,
+                        &ID_persist.NRPYELL_dxx0, &ID_persist.NRPYELL_dxx1, &ID_persist.NRPYELL_dxx2,
+                        &ID_persist.NRPYELL_xx0, &ID_persist.NRPYELL_xx1, &ID_persist.NRPYELL_xx2,
+                        &ID_persist.NRPYELL_rho, &ID_persist.NRPYELL_P,
+                        &ID_persist.NRPYELL_psi_minus_one, &ID_persist.NRPYELL_alphaconf_minus_one);
+"""
+    free_ID_persist_struct_str += r"""
+    free(ID_persist.NRPYELL_xx0);
+    free(ID_persist.NRPYELL_xx1);
+    free(ID_persist.NRPYELL_xx2);
+    free(ID_persist.NRPYELL_rho);
+    free(ID_persist.NRPYELL_P);
+    free(ID_persist.NRPYELL_psi_minus_one);
+    free(ID_persist.NRPYELL_alphaconf_minus_one);
+"""
+free_ID_persist_struct_str += r"}"
+
+BCl.register_CFunction_initial_data(
+    CoordSystem=CoordSystem,
+    IDtype=IDtype,
+    IDCoordSystem="Spherical",
+    enable_checkpointing=True,
+    ID_persist_struct_str=ID_persist_struct_str,
+    populate_ID_persist_struct_str=populate_ID_persist_struct_str,
+    free_ID_persist_struct_str=free_ID_persist_struct_str,
     enable_T4munu=True,
 )
 
@@ -179,6 +215,21 @@ BCl.register_CFunction_constraints(
     OMP_collapse=OMP_collapse,
 )
 
+# ----------------------------------------------------------------------------------- #
+#                            NEW NRPYELLIPTIC FUNCTIONS
+# ----------------------------------------------------------------------------------- #
+if IDtype == "NRPYELL_interp":
+    # Register function to write minimal NRPyElliptic binary file
+    nrpyellbinwriter.register_CFunction_read_NRPYELL_binary()
+
+    # Register interpolation function
+    interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
+        enable_simd=enable_simd, project_dir=project_dir
+    )
+    xx_tofrom_Cart.register_CFunction__NRPYELL_Cart_to_xx(CoordSystem="SinhSymTP")
+
+    NRPYELL_interp.register_CFunction_NRPYELL_interp()
+
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
 
@@ -220,8 +271,16 @@ rfm_wrapper_functions.register_CFunctions_CoordSystem_wrapper_funcs()
 #         command line parameters, set up boundary conditions,
 #         and create a Makefile for this project.
 #         Project is output to project/[project_name]/
+
+# Adjust central density of TOV solver
+par.adjust_CodeParam_default("initial_central_density", 0.129285)
+
+# Adjust parameters based on choice of coordinate system
 if CoordSystem == "SinhSpherical":
     par.adjust_CodeParam_default("SINHW", 0.4)
+elif CoordSystem == "SinhCylindrical":
+    par.adjust_CodeParam_default("SINHWRHO", 0.2)
+    par.adjust_CodeParam_default("SINHWZ", 0.2)
 
 CodeParameters.write_CodeParameters_h_files(project_dir=project_dir)
 CodeParameters.register_CFunctions_params_commondata_struct_set_to_default()
@@ -262,6 +321,7 @@ Makefile_helpers.output_CFunctions_function_prototypes_and_construct_Makefile(
     compiler_opt_option="default",
     addl_CFLAGS=["$(shell gsl-config --cflags)"],
     addl_libraries=["$(shell gsl-config --libs)"],
+    CC="gcc",
 )
 print(
     f"Finished! Now go into project/{project_name} and type `make` to build, then ./{project_name} to run."
