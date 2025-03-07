@@ -57,7 +57,7 @@ enum { INTERP_SUCCESS,
 #pragma GCC optimize("unroll-loops")
 """
 
-    desc = r"""Performs 2D Lagrange interpolation (specialized from the 3D version) from a set of uniform grid points on the source grid to arbitrary destination points. 
+    desc = r"""Performs 2D Lagrange interpolation (specialized from the 3D version) from a set of uniform grid points on the source grid to arbitrary destination points.
 The interpolation is performed in the x0 and x1 directions only; the x2 coordinate is fixed.
 
 This function interpolates scalar grid functions from a source grid to a set of destination points in the x0 and x1 directions,
@@ -88,8 +88,8 @@ The function assumes that the destination grid points are within the range of th
     const int N_interp_GHOSTS, const REAL src_dxx0, const REAL src_dxx1,
     const int src_Nxx_plus_2NGHOSTS0, const int src_Nxx_plus_2NGHOSTS1,
     const int NUM_INTERP_GFS, REAL *restrict src_x0x1x2[3],
-    const REAL *restrict src_gf_ptrs[NUM_INTERP_GFS], const int num_dst_pts, const REAL dst_x0x1[][2],
-    REAL *restrict dst_data[NUM_INTERP_GFS]"""
+    const REAL *restrict src_gf_ptrs[], const int num_dst_pts, const REAL dst_x0x1[][2],
+    REAL *restrict dst_data[]"""
 
     body = r"""
   // Unpack parameters.
