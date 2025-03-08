@@ -48,8 +48,9 @@ par.set_parval_from_str("Infrastructure", "BHaH")
 project_name = "hydro_without_hydro"
 IDtype = "NRPYELL_interp"  # "NRPYELL_interp" or "TOVola_interp"
 CoordSystem = "SinhCylindrical"
-LapseEvolutionOption = "HarmonicSlicing"
-ShiftEvolutionOption = "Frozen"
+LapseEvolutionOption = "OnePlusLog"
+ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
+GammaDriving_eta = 1.0
 fp_type = "double"
 grid_physical_size = 100.0
 diagnostics_output_every = 0.25
@@ -92,7 +93,6 @@ par.set_parval_from_str("fd_order", fd_order)
 par.set_parval_from_str("fp_type", fp_type)
 par.set_parval_from_str("CoordSystem_to_register_CodeParameters", CoordSystem)
 par.adjust_CodeParam_default("t_final", t_final)
-
 
 #########################################################
 # STEP 2: Declare core C functions & register each to
@@ -274,6 +274,7 @@ rfm_wrapper_functions.register_CFunctions_CoordSystem_wrapper_funcs()
 
 # Adjust central density of TOV solver
 par.adjust_CodeParam_default("initial_central_density", 0.129285)
+par.adjust_CodeParam_default("eta", GammaDriving_eta)
 
 # Adjust parameters based on choice of coordinate system
 if CoordSystem == "SinhSpherical":
