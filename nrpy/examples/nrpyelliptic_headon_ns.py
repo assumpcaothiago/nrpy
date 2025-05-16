@@ -32,6 +32,11 @@ from nrpy.infrastructures.BHaH import (
 )
 from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
+# Import TOVola modules
+import nrpy.infrastructures.BHaH.general_relativity.TOVola.ID_persist_struct as IDps
+import nrpy.infrastructures.BHaH.general_relativity.TOVola.TOVola_interp as TOVinterp
+import nrpy.infrastructures.BHaH.general_relativity.TOVola.TOVola_solve as TOVsolve
+
 # Import specific NRPyElliptic modules
 import nrpy.infrastructures.BHaH.nrpyelliptic.common_C_codegen_library as commonClib
 import nrpy.infrastructures.BHaH.nrpyelliptic.headon_ns_C_codegen_library as nrpyellClib
@@ -80,7 +85,7 @@ MINIMUM_GLOBAL_WAVESPEED = 0.7
 CFL_FACTOR = 1.0  # NRPyElliptic wave speed prescription assumes this parameter is ALWAYS set to 1
 CoordSystem = "SinhSymTP"
 Nxx_dict = {
-    "SinhSymTP": [128, 128, 2],
+    "SinhSymTP": [256, 256, 2],
     "SinhCylindricalv2": [128, 16, 256],
     "SinhSpherical": [128, 64, 16],
 }
@@ -103,8 +108,8 @@ OMP_collapse = 1
 enable_checkpointing = True
 enable_rfm_precompute = True
 MoL_method = "RK4"
-fd_order = 4
-radiation_BC_fd_order = 4
+fd_order = 10
+radiation_BC_fd_order = 6
 enable_simd = False
 parallel_codegen_enable = True
 boundary_conditions_desc = "outgoing radiation"
@@ -200,6 +205,10 @@ interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
     enable_simd=enable_simd, project_dir=project_dir
 )
 
+# Register functions for TOV solver
+TOVinterp.register_CFunction_TOVola_interp()
+TOVsolve.register_CFunction_TOVola_solve()
+
 if __name__ == "__main__" and parallel_codegen_enable:
     pcg.do_parallel_codegen()
 
@@ -242,6 +251,9 @@ progress.register_CFunction_progress_indicator(
     progress_str=progress_str, compute_ETA=False
 )
 rfm_wrapper_functions.register_CFunctions_CoordSystem_wrapper_funcs()
+
+# Adjust central density of TOV solver
+par.adjust_CodeParam_default("initial_central_density", 0.129285)
 
 # Update parameters needed for hyperbolic relaxation method
 par.adjust_CodeParam_default("eta_damping", eta_damping)
@@ -324,6 +336,8 @@ Makefile_helpers.output_CFunctions_function_prototypes_and_construct_Makefile(
     project_name=project_name,
     exec_or_library_name=project_name,
     CC="gcc",  # For compatiblity with 3d interpolation
+    addl_CFLAGS=["$(shell gsl-config --cflags)"],
+    addl_libraries=["$(shell gsl-config --libs)"],
 )
 print(
     f"Finished! Now go into project/{project_name} and type `make` to build, then ./{project_name} to run."
