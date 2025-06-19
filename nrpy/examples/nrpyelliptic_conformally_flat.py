@@ -33,6 +33,14 @@ from nrpy.infrastructures.BHaH import (
 )
 from nrpy.infrastructures.BHaH.MoLtimestepping import MoL_register_all
 
+# ----------------------------------------------------------------------------------- #
+#                            INTERPOLATION FUNCTION IMPORTS
+# ----------------------------------------------------------------------------------- #
+import nrpy.infrastructures.BHaH.interpolation_2d_general__uniform_src_grid as interp2d
+
+# import nrpy.infrastructures.BHaH.interpolation_3d_general__uniform_src_grid as interp3d
+import nrpy.infrastructures.BHaH.nrpyelliptic.conformally_flat_binary_writer as nrpyellbinwriter
+
 par.set_parval_from_str("Infrastructure", "BHaH")
 
 # Code-generation-time parameters:
@@ -231,6 +239,22 @@ nrpyelliptic.diagnostics.register_CFunction_compute_L2_norm_of_gridfunction(
 
 # Register function to check for stop conditions
 nrpyelliptic.diagnostics.register_CFunction_check_stop_conditions()
+
+
+# ----------------------------------------------------------------------------------- #
+#                         CHECKPOINT AND INTERPOLATION FUNCTIONS
+# ----------------------------------------------------------------------------------- #
+
+# Register function to write minimal NRPyElliptic binary file
+nrpyellbinwriter.register_CFunction_write_NRPYELL_binary()
+nrpyellbinwriter.register_CFunction_read_NRPYELL_binary()
+
+# Register interpolation function
+interp2d.register_CFunction_interpolation_2d_general__uniform_src_grid(
+    enable_simd=enable_simd, project_dir=project_dir
+)
+xx_tofrom_Cart.register_CFunction__NRPYELL_Cart_to_xx(CoordSystem="SinhSymTP")
+
 
 if __name__ == "__main__" and parallel_codegen_enable:
     pcg.do_parallel_codegen()
