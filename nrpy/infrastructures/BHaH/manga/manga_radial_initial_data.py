@@ -28,7 +28,7 @@ def register_CFunction_manga_radial_initial_data() -> None:
   TOVola_solve(commondata, &ID_persist);
 
   // Declare quantities for sampling local radial axis using SinhSpherical coordinates (this has nothing to do with the coordinates used by BHaH for evolution)
-  const REAL domain_size = params->AMPLRHO;
+  const REAL domain_size = params->grid_physical_size;
   const REAL local_SINHW = 0.2;
   const REAL dx = 1.0 / ((REAL)num_radial_pts);
 
