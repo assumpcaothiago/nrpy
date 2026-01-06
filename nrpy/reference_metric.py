@@ -57,6 +57,7 @@ class ReferenceMetric:
             "grid_physical_size",
             defaultvalue=10.0,
             add_to_glb_code_params_dict=True,
+            commondata=True,
         )
         par.register_CodeParameter(
             "REAL",
@@ -883,6 +884,7 @@ class ReferenceMetric:
                 "SINHWXYZ",
                 0.2,
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             self.grid_physical_size_dict = {"AMPLXYZ": "grid_physical_size"}
 
@@ -950,6 +952,7 @@ class ReferenceMetric:
             ["AMPL", "SINHW", "RMIN"],
             [10.0, 0.2, 2.0],
             add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+            commondata=True,
         )
         self.grid_hole_radius_dict["RMIN"] = "grid_hole_radius"
         self.grid_physical_size_dict["AMPL"] = "grid_physical_size"
@@ -1115,6 +1118,7 @@ class ReferenceMetric:
                 "SINHW",
                 0.2,
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             if "HoleySinhSpherical" in self.CoordSystem:
                 RMIN = par.register_CodeParameter(
@@ -1176,6 +1180,7 @@ class ReferenceMetric:
                 "SINHW",
                 0.2,
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             self.xxmin = [sp.sympify(0), sp.sympify(0), -PI]
             self.xxmax = [sp.sympify(1), PI, PI]
@@ -1186,6 +1191,7 @@ class ReferenceMetric:
                 "r_slope",
                 0.0625,
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             r = self.Sinhv2(self.xx[0], AMPL, SINHW, r_slope)
             th = self.xx[1]
@@ -1267,6 +1273,7 @@ class ReferenceMetric:
             ["bScale", "SINHWAA"],
             [0.5, 0.2],
             add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+            commondata=True,
         )
 
         self.xxmin = [sp.sympify(0), sp.sympify(0), -PI]
@@ -1478,6 +1485,7 @@ class ReferenceMetric:
                 [10.0, 10.0],
                 add_to_parfile=self.add_rfm_params_to_parfile,
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             SINHWRHO, SINHWZ = par.register_CodeParameters(
                 "REAL",
@@ -1485,6 +1493,7 @@ class ReferenceMetric:
                 ["SINHWRHO", "SINHWZ"],
                 [0.2, 0.2],
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
 
             self.xxmin = [sp.sympify(0), -PI, sp.sympify(-1)]
@@ -1531,6 +1540,7 @@ class ReferenceMetric:
                 ["SINHWRHO", "SINHWZ"],
                 [0.2, 0.2],
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
             self.xxmin = [sp.sympify(0), -PI, sp.sympify(-1)]
             self.xxmax = [sp.sympify(1), PI, sp.sympify(+1)]
@@ -1544,6 +1554,7 @@ class ReferenceMetric:
                 ["rho_slope", "z_slope"],
                 [0.0625, 0.0625],
                 add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+                commondata=True,
             )
 
             RHOCYL = self.Sinhv2(self.xx[0], AMPLRHO, SINHWRHO, rho_slope)
