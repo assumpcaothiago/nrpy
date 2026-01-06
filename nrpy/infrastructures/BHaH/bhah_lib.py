@@ -164,10 +164,10 @@ def register_CFunction_bhah_evolve() -> None:
 
 def register_CFunctions_bhah_lib() -> None:
     """Register all C functions required by the bhah_lib library."""
-    register_CFunction_bhah_initialize()
+    # register_CFunction_bhah_initialize()
     register_CFunction_bhah_evolve()
     register_CFunction_bhah_diagnostics()
-    register_CFunction_bhah_finalize()
+    # register_CFunction_bhah_finalize()
 
 
 def supplemental_defines_dict_bhah_lib() -> Dict[str, str]:
