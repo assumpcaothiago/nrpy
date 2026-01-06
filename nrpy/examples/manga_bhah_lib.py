@@ -140,6 +140,7 @@ BHaH.numerical_grids_and_timestep.register_CFunctions(
     set_of_CoordSystems=set_of_CoordSystems,
     list_of_grid_physical_sizes=[grid_physical_size],
     Nxx_dict=Nxx_dict,
+    gridding_approach="manga-compatible grid(s)",
     enable_rfm_precompute=enable_rfm_precompute,
     enable_CurviBCs=True,
 )
