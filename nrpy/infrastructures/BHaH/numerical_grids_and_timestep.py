@@ -519,7 +519,7 @@ def register_CFunction_numerical_grids_and_timestep(
 
     :param set_of_CoordSystems: Set of CoordSystems
     :param list_of_grid_physical_sizes: List of grid_physical_size for each CoordSystem; needed for Independent grids.
-    :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
+    :param gridding_approach: Choices: "independent grid(s)" (default), "manga-compatible grid(s)" or "multipatch".
     :param enable_rfm_precompute: Whether to enable reference metric precomputation (default: False).
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions (default: False).
     :param enable_set_cfl_timestep: Whether to enable computation of dt, the CFL timestep. A custom version can be implemented later.
@@ -556,13 +556,15 @@ def register_CFunction_numerical_grids_and_timestep(
         ),
     )
     body = ""
-    if gridding_approach == "independent grid(s)":
+    if (gridding_approach == "independent grid(s)") or (
+        gridding_approach == "manga-compatible grid(s)"
+    ):
         body += rf"""
   // Step 1.a: Set up independent grids: first set NUMGRIDS == number of unique CoordSystems we have.
   commondata->NUMGRIDS = {len(set_of_CoordSystems)};
   {{
-    // Independent grids
-    int Nx[3] = {{ -1, -1, -1 }};
+    // Setting {gridding_approach}
+    int Nx[3] = {"{{ -1, -1, -1 }};" if gridding_approach == "independent grid(s)" else "{(griddata->params).Nxx0, (griddata->params).Nxx1, (griddata->params).Nxx2};"}
 
     // For each grid, set Nxx & Nxx_plus_2NGHOSTS, as well as dxx, invdxx, & xx based on grid_physical_size
     const bool apply_convergence_factor_and_set_xxminmax_defaults = true;
@@ -573,7 +575,7 @@ def register_CFunction_numerical_grids_and_timestep(
     // In multipatch, gridname is a helpful alias indicating position of the patch. E.g., "lower {CoordSystem} patch"
     snprintf(griddata[grid].params.gridname, 100, "grid_{CoordSystem}");
     griddata[grid].params.CoordSystem_hash = {CoordSystem.upper()};
-    griddata[grid].params.grid_physical_size = {list_of_grid_physical_sizes[which_CoordSystem]};
+    {"// griddata[grid].params.grid_physical_size remains unchanged" if (gridding_approach == "manga-compatible grid(s)") else f"griddata[grid].params.grid_physical_size = {list_of_grid_physical_sizes[which_CoordSystem]};"}
     numerical_grid_params_Nxx_dxx_xx(commondata, &griddata[grid].params, griddata[grid].xx, Nx, apply_convergence_factor_and_set_xxminmax_defaults);
 
 #ifdef __CUDACC__
@@ -711,7 +713,7 @@ def register_CFunctions(
     :param set_of_CoordSystems: Set of CoordSystems
     :param list_of_grid_physical_sizes: List of grid_physical_size for each CoordSystem; needed for Independent grids.
     :param Nxx_dict: Dictionary containing number of grid points.
-    :param gridding_approach: Choices: "independent grid(s)" (default) or "multipatch".
+    :param gridding_approach: Choices: "independent grid(s)" (default), "manga-compatible grid(s)" or "multipatch".
     :param enable_rfm_precompute: Whether to enable reference metric precomputation.
     :param enable_CurviBCs: Whether to enable curvilinear boundary conditions.
     :param enable_set_cfl_timestep: Whether to enable computation of dt, the CFL timestep. A custom version can be implemented later.
