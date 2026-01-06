@@ -17,7 +17,7 @@ import shutil
 import nrpy.helpers.parallel_codegen as pcg
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
-from nrpy.infrastructures import BHaH, manga
+from nrpy.infrastructures import BHaH
 
 parser = argparse.ArgumentParser(
     description="NRPyElliptic Solver for Conformally Flat BBH initial data"
@@ -207,12 +207,12 @@ BHaH.general_relativity.constraints_eval.register_CFunction_constraints_eval(
 )
 
 # Generate new MaNGa helper functions
-manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
+BHaH.manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
     CoordSystem
 )
-manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
-manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
-manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
+BHaH.manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
+BHaH.manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
+BHaH.manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
 
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
