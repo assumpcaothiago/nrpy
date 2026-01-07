@@ -215,6 +215,11 @@ BHaH.manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
 BHaH.manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
 BHaH.manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
 
+BHaH.manga.BHaH_setup.register_CFunction_BHaH_setup(
+    set_initial_data_after_auxevol_malloc=True,
+    post_non_y_n_auxevol_mallocs="",
+    CoordSystem=CoordSystem)
+
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
 
