@@ -13,7 +13,6 @@ from . import (
     general_relativity,
     griddata_commondata,
     main_c,
-    manga,
     nrpyelliptic,
     numerical_grids_and_timestep,
     parallelization,
