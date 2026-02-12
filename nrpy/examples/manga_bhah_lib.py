@@ -17,7 +17,7 @@ import shutil
 import nrpy.helpers.parallel_codegen as pcg
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
-from nrpy.infrastructures import BHaH
+from nrpy.infrastructures import BHaH, manga
 
 parser = argparse.ArgumentParser(
     description="NRPyElliptic Solver for Conformally Flat BBH initial data"
@@ -72,7 +72,7 @@ radiation_BC_fd_order = 4
 separate_Ricci_and_BSSN_RHS = True
 enable_parallel_codegen = True
 enable_fd_functions = True
-enable_KreissOliger_dissipation = False
+enable_KreissOliger_dissipation = True
 enable_rfm_precompute = True  # WIP: Will remove; for ease of maintenance we are no longer supporting disabled
 enable_intrinsics = True  # WIP: Will remove; for ease of maintenance we are no longer supporting disabled
 enable_CAKO = True
@@ -208,14 +208,14 @@ BHaH.general_relativity.constraints_eval.register_CFunction_constraints_eval(
 )
 
 # Generate new MaNGa helper functions
-BHaH.manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
+manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
     CoordSystem
 )
-BHaH.manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
-BHaH.manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
-BHaH.manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
+manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
+manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
+manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
 
-BHaH.manga.BHaH_setup.register_CFunction_BHaH_setup(
+manga.BHaH_setup.register_CFunction_BHaH_setup(
     set_initial_data_after_auxevol_malloc=True,
     post_non_y_n_auxevol_mallocs="",
     CoordSystem=CoordSystem)
