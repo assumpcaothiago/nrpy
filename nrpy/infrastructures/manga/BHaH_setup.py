@@ -188,13 +188,12 @@ for(int grid=0; grid<commondata.NUMGRIDS; grid++)
 def register_CFunction_BHaH_setup(
     set_initial_data_after_auxevol_malloc: bool,
     post_non_y_n_auxevol_mallocs: str,
-    CoordSystem: str,
 ) -> Union[None, pcg.NRPyEnv_type]:
     """
     Register function to compute rescaled 3-vector in curvilinar coordinates from 3-vector in Cartesian coordinates
 
-    :param CoordSystem: The coordinate system.
-    :param enable_rfm_precompute: Whether to enable reference metric precomputation.
+    :param set_initial_data_after_auxevol_malloc: Flag to set initial data after auxevol malloc.
+    :param post_non_y_n_auxevol_mallocs: String of post-malloc function calls.
 
     :return: None if in registration phase, else the updated NRPy environment.
 
@@ -211,7 +210,7 @@ def register_CFunction_BHaH_setup(
     cfunc_type = "void"
     name = "BHaH_setup"
 
-    sinh_params=[]
+    sinh_params = []
     for key in par.glb_code_params_dict.keys():
         if "sinh" in key.lower():
             sinh_params.append(key)
@@ -220,8 +219,7 @@ def register_CFunction_BHaH_setup(
     for param in sinh_params:
         param_str += f"const REAL {param}, "
 
-
-    params = fr"""
+    params = rf"""
         const int nxx0, const int nxx1, const int nxx2, const REAL cfl,
         const REAL grid_physical_size, {param_str}BHaH_struct *bhahstruct
 """
@@ -231,7 +229,6 @@ def register_CFunction_BHaH_setup(
         post_non_y_n_auxevol_mallocs=post_non_y_n_auxevol_mallocs,
         sinh_params=sinh_params,
     )
-
 
     cfc.register_CFunction(
         include_CodeParameters_h=False,
