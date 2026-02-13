@@ -1,3 +1,4 @@
+# nrpy/infrastructures/manga/manga_radial_initial_data.py
 """
 Register function to generate radial initial data for MaNGa.
 
@@ -5,6 +6,7 @@ Authors: Thiago Assumpção
 """
 
 import nrpy.c_function as cfc
+
 
 def register_CFunction_manga_radial_initial_data() -> None:
     """

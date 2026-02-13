@@ -1,4 +1,4 @@
-# nrpy/infrastructures/BHaH/manga/BHaH_setup.py
+# nrpy/infrastructures/manga/BHaH_setup.py
 """
 Generate function to allocate memory and intialize BHaH quantities
 
