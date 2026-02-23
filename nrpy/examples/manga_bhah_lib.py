@@ -218,7 +218,7 @@ manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
 manga.BHaH_setup.register_CFunction_BHaH_setup(
     set_initial_data_after_auxevol_malloc=True,
     post_non_y_n_auxevol_mallocs="",
-    CoordSystem=CoordSystem)
+)
 
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
