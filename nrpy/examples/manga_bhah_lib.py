@@ -208,6 +208,9 @@ BHaH.general_relativity.constraints_eval.register_CFunction_constraints_eval(
 )
 
 # Generate new MaNGa helper functions
+BHaH.BHaHAHA.interpolation_3d_general__uniform_src_grid.register_CFunction_interpolation_3d_general__uniform_src_grid(
+    enable_simd=enable_intrinsics, project_dir=project_dir
+)
 manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
     CoordSystem
 )
