@@ -224,6 +224,8 @@ manga.BHaH_setup.register_CFunction_BHaH_setup(
 manga.BHaH_get_metric_extrinsic_curvature.register_CFunction_BHaH_get_metric_extrinsic_curvature(
     CoordSystem=CoordSystem
 )
+manga.BHaH_checkpoint_and_diagnostics.register_CFunction_BHaH_checkpoint_and_diagnostics()
+manga.BHaH_evolve.register_CFunction_BHaH_evolve()
 
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
@@ -304,8 +306,6 @@ typedef struct BHaH_struct {
 } BHaH_struct;"""
     },
 )
-
-BHaH.bhah_lib.register_CFunctions_bhah_lib()
 
 BHaH.griddata_commondata.register_CFunction_griddata_free(
     enable_rfm_precompute=enable_rfm_precompute, enable_CurviBCs=True
