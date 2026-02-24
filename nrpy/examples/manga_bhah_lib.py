@@ -217,10 +217,12 @@ manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
 manga.u4Ut.register_CFunction_compute_u4Ut(CoordSystem)
 manga.T4munu_from_primitives.register_CFunction_compute_T4UU(CoordSystem)
 manga.manga_radial_initial_data.register_CFunction_manga_radial_initial_data()
-
 manga.BHaH_setup.register_CFunction_BHaH_setup(
     set_initial_data_after_auxevol_malloc=True,
     post_non_y_n_auxevol_mallocs="",
+)
+manga.BHaH_get_metric_extrinsic_curvature.register_CFunction_BHaH_get_metric_extrinsic_curvature(
+    CoordSystem=CoordSystem
 )
 
 if __name__ == "__main__":
