@@ -13,6 +13,7 @@ from types import FrameType as FT
 import nrpy.c_function as cfc
 import nrpy.helpers.parallel_codegen as pcg
 
+
 def register_CFunction_BHaH_evolve() -> Union[None, pcg.NRPyEnv_type]:
     """Register an interface function for time evolution.
 
@@ -23,7 +24,10 @@ def register_CFunction_BHaH_evolve() -> Union[None, pcg.NRPyEnv_type]:
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
         return None
 
-    includes = ["BHaH_defines.h","BHaH_function_prototypes.h",]
+    includes = [
+        "BHaH_defines.h",
+        "BHaH_function_prototypes.h",
+    ]
     desc = "Perform spacetime evolution in BlackHoles@Home"
     cfunc_type = "void"
     name = "BHaH_evolve"
@@ -49,4 +53,3 @@ def register_CFunction_BHaH_evolve() -> Union[None, pcg.NRPyEnv_type]:
     )
 
     return pcg.NRPyEnv()
-
