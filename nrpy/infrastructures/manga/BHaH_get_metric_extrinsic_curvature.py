@@ -60,7 +60,7 @@ def _generate_body_to_compute_ADM_variables(CoordSystem, enable_rfm_precompute) 
     sympy_exprs = list(ADM_Cart_varname_to_expr_dict.values())
     varnames = list(ADM_Cart_varname_to_expr_dict.keys())
 
-    # Step 4: Geneare body of C expression
+    # Step 4: Generate body of C expression
     body = ccg.c_codegen(
         sympy_exprs,
         varnames,
