@@ -40,6 +40,7 @@ def register_CFunction_BHaH_evolve() -> Union[None, pcg.NRPyEnv_type]:
       // Only time evolution, since diagnostics are directly handled by MaNGa
       MoL_step_forward_in_time(commondata, griddata);
     }
+    // TODO: The function that computes source terms for hydro equations should be called here.
 """
 
     cfc.register_CFunction(
