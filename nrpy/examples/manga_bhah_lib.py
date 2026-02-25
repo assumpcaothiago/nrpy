@@ -226,6 +226,7 @@ manga.BHaH_get_metric_extrinsic_curvature.register_CFunction_BHaH_get_metric_ext
 )
 manga.BHaH_checkpoint_and_diagnostics.register_CFunction_BHaH_checkpoint_and_diagnostics()
 manga.BHaH_evolve.register_CFunction_BHaH_evolve()
+manga.BHaH_set_TOV.register_CFunction_BHaH_set_TOV()
 
 if __name__ == "__main__":
     pcg.do_parallel_codegen()
