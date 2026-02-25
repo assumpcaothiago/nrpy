@@ -13,7 +13,9 @@ import nrpy.c_function as cfc
 import nrpy.helpers.parallel_codegen as pcg
 
 
-def register_CFunction_BHaH_checkpoint_and_diagnostics() -> Union[None, pcg.NRPyEnv_type]:
+def register_CFunction_BHaH_checkpoint_and_diagnostics() -> (
+    Union[None, pcg.NRPyEnv_type]
+):
     """
     Register function to write checkpoint file and diagnostics using custom file names.
 
