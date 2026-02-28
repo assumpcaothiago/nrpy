@@ -1,6 +1,6 @@
 # nrpy/infrastructures/manga/BHaH_set_TOV.py
 """
-Generate function to to set TOV solution for MaNGa.
+Generate function to set TOV solution for MaNGa.
 
 Author: Thiago Assumpção
 """
