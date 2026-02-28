@@ -1,5 +1,6 @@
 from . import (
     BHaH_evolve,
+    BHaH_set_PrimsAndPos_particles,
     BHaH_get_metric_extrinsic_curvature,
     BHaH_set_TOV,
     BHaH_setup,
