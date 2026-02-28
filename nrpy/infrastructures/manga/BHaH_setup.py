@@ -39,7 +39,7 @@ def _generate_BHaH_setup_body(
     body_parts = []
 
     # Step 0: Variable declarations
-    declarations_c_code = "commondata_struct commondata; // commondata contains parameters common to all grids.\n"
+    declarations_c_code = "commondata_struct *commondata = (commondata_struct *)malloc(sizeof(commondata_struct)); // commondata contains parameters common to all grids.\n"
     declarations_c_code += f"griddata_struct *{compute_griddata}; // griddata contains data specific to an individual grid.\n"
     if is_cuda:
         declarations_c_code += r"""griddata_struct *griddata_host; // stores only the host data needed for diagnostics
@@ -48,36 +48,36 @@ def _generate_BHaH_setup_body(
     body_parts.append(declarations_c_code)
 
     # Step 1: Initialization
-    griddata_malloc_code = f"{compute_griddata} = (griddata_struct *)malloc(sizeof(griddata_struct) * MAXNUMGRIDS);"
+    griddata_malloc_code = f"{compute_griddata} = (griddata_struct *)malloc(sizeof(griddata_struct) * commondata->NUMGRIDS);"
     if is_cuda:
-        griddata_malloc_code += "\ngriddata_host = (griddata_struct *)malloc(sizeof(griddata_struct) * MAXNUMGRIDS);"
+        griddata_malloc_code += "\ngriddata_host = (griddata_struct *)malloc(sizeof(griddata_struct) * commondata->NUMGRIDS);"
     numerical_grids_args = (
-        f"&commondata, {compute_griddata}"
+        f"commondata, {compute_griddata}"
         + (", griddata_host" if is_cuda else "")
         + ", calling_for_first_time"
     )
 
     step1_c_code = f"""
 // Step 1.a: Initialize each CodeParameter in the commondata struct to its default value.
-commondata_struct_set_to_default(&commondata);
+commondata_struct_set_to_default(commondata);
 
 // Step 1.b: Overwrite the default values with those from the parameter file.
 //           Then overwrite the parameter file values with those provided via command line arguments.
-// cmdline_input_and_parfile_parser(&commondata, argc, argv); -> Thiago says: ignore it for library
+// cmdline_input_and_parfile_parser(commondata, argc, argv); -> Thiago says: ignore it for library
 
-// Step 1.c: Allocate memory for MAXNUMGRIDS griddata structs,
+// Step 1.c: Allocate memory for NUMGRIDS griddata structs,
 //           where each structure contains data specific to an individual grid.
 {griddata_malloc_code}
 
 // Step 1.d: Initialize each CodeParameter in {compute_griddata}.params to its default value.
-params_struct_set_to_default(&commondata, {compute_griddata});
+params_struct_set_to_default(commondata, {compute_griddata});
 """
     step1_c_code += f"""
 // Step 1.e: Overwrite grid parameters and CFL factor using values passed by the function call
 {{
 const int grid = 0;
 
-commondata.CFL_FACTOR = cfl;
+commondata->CFL_FACTOR = cfl;
 (griddata[grid].params).Nxx0 = nxx0;
 (griddata[grid].params).Nxx1 = nxx1;
 (griddata[grid].params).Nxx2 = nxx2;
@@ -92,8 +92,8 @@ commondata.CFL_FACTOR = cfl;
 // Step 1.f: Set up numerical grids, including parameters such as NUMGRIDS, xx[3], masks, Nxx, dxx, invdxx,
 //           bcstruct, rfm_precompute, timestep, and others.
 {{
-  IFCUDARUN(for (int grid = 0; grid < MAXNUMGRIDS; grid++) griddata_device[grid].params.is_host = false;);
-  // If this function is being called for the first time, initialize commondata.time, nn, t_0, and nn_0 to 0.
+  IFCUDARUN(for (int grid = 0; grid < commondata->NUMGRIDS; grid++) griddata_device[grid].params.is_host = false;);
+  // If this function is being called for the first time, initialize commondata->time, nn, t_0, and nn_0 to 0.
   const bool calling_for_first_time = true;
   numerical_grids_and_timestep({numerical_grids_args});
 }} // END setup of numerical & temporal grids.
@@ -106,7 +106,7 @@ commondata.CFL_FACTOR = cfl;
     # Step 2: Allocate memory for evolved gridfunctions (y_n_gfs).
     step2_c_code = f"""
 // Step 2: Allocate storage for the initial data (y_n_gfs gridfunctions) on each grid.
-for(int grid=0; grid<commondata.NUMGRIDS; grid++) {{
+for(int grid=0; grid<commondata->NUMGRIDS; grid++) {{
   const int Nxx_plus_2NGHOSTS_tot = ({compute_griddata}[grid].params.Nxx_plus_2NGHOSTS0 * //
                                      {compute_griddata}[grid].params.Nxx_plus_2NGHOSTS1 * //
                                      {compute_griddata}[grid].params.Nxx_plus_2NGHOSTS2);
@@ -123,11 +123,11 @@ for(int grid=0; grid<commondata.NUMGRIDS; grid++) {{
     body_parts.append(step2_c_code)
 
     # Steps 3 & 4: Set initial data and allocate memory for auxiliary gridfunctions.
-    initial_data_call = f"initial_data(&commondata, {f'griddata_host, {compute_griddata}' if is_cuda else compute_griddata});"
+    initial_data_call = f"initial_data(commondata, {f'griddata_host, {compute_griddata}' if is_cuda else compute_griddata});"
     setup_initial_data_code = f"Set up initial data.\n{initial_data_call}\n"
     allocate_storage_code = f"""Allocate storage for non-y_n gridfunctions, needed for the Runge-Kutta-like timestepping.
-for(int grid=0; grid<commondata.NUMGRIDS; grid++)
-  MoL_malloc_intermediate_stage_gfs(&commondata, &{compute_griddata}[grid].params, &{compute_griddata}[grid].gridfuncs);\n"""
+for(int grid=0; grid<commondata->NUMGRIDS; grid++)
+  MoL_malloc_intermediate_stage_gfs(commondata, &{compute_griddata}[grid].params, &{compute_griddata}[grid].gridfuncs);\n"""
 
     if set_initial_data_after_auxevol_malloc:
         step3_code, step4_code = (allocate_storage_code, setup_initial_data_code)
@@ -144,7 +144,7 @@ for(int grid=0; grid<commondata.NUMGRIDS; grid++)
     step5_c_code = f"""
   // Step 5: Set pointers to griddata and commondata
   bhahstruct->griddata = griddata;
-  bhahstruct->commondata = &commondata;
+  bhahstruct->commondata = commondata;
 """
     body_parts.append(step5_c_code)
 
@@ -153,14 +153,14 @@ for(int grid=0; grid<commondata.NUMGRIDS; grid++)
     #     if not is_cuda:
     #         free_memory_code = rf"""
     #   const bool free_non_y_n_gfs_and_core_griddata_pointers=true;
-    #   griddata_free(&commondata, {compute_griddata}, free_non_y_n_gfs_and_core_griddata_pointers);
+    #   griddata_free(commondata, {compute_griddata}, free_non_y_n_gfs_and_core_griddata_pointers);
     # }}
     #         """
     #     else:
     #         free_memory_code = rf"""
     #   const bool free_non_y_n_gfs_and_core_griddata_pointers=true;
-    #   griddata_free_device(&commondata, {compute_griddata}, free_non_y_n_gfs_and_core_griddata_pointers);
-    #   griddata_free(&commondata, griddata_host, free_non_y_n_gfs_and_core_griddata_pointers);
+    #   griddata_free_device(commondata, {compute_griddata}, free_non_y_n_gfs_and_core_griddata_pointers);
+    #   griddata_free(commondata, griddata_host, free_non_y_n_gfs_and_core_griddata_pointers);
     # }}
     # for (int i = 0; i < NUM_STREAMS; ++i) {{
     #   cudaStreamDestroy(streams[i]);
