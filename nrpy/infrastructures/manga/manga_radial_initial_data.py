@@ -35,6 +35,7 @@ def register_CFunction_manga_radial_initial_data() -> None:
   const REAL dx = 1.0 / ((REAL)num_radial_pts);
 
   // Populate arrays by interpolating rho_baryon and pressure onto r_axis
+#pragma omp parallel for
   for (int i = 0; i < num_radial_pts; i++) {
     const REAL x = dx / 2.0 + dx * i;
     r_axis[i] = domain_size * sinh(x / local_SINHW) / sinh(1.0 / local_SINHW);
@@ -46,8 +47,8 @@ def register_CFunction_manga_radial_initial_data() -> None:
                             ID_persist.rho_energy_arr, ID_persist.rho_baryon_arr, ID_persist.P_arr, ID_persist.M_arr, ID_persist.expnu_arr,
                             ID_persist.exp4phi_arr, ID_persist.r_iso_arr, &rho_energy_val, &rho_baryon_val, &P_val, &M_val, &expnu_val,
                             &exp4phi_val);
-  *rho_baryon = rho_baryon_val;
-  *pressure = P_val;
+  rho_baryon[i] = rho_baryon_val;
+  pressure[i] = P_val;
   } // END for (int i = 0; i < num_radial_pts; i++)
 
   // Free memory allocated for ID struct
