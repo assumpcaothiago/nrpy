@@ -18,6 +18,7 @@ def register_CFunction_interpolation_3d_general__uniform_src_grid(
     enable_simd: bool,
     project_dir: str,
     use_cpp: bool = False,
+    pragma_mode: str = "enabled",
 ) -> Union[None, pcg.NRPyEnv_type]:
     """
     Register the C function for general-purpose 3D Lagrange interpolation.
@@ -27,6 +28,7 @@ def register_CFunction_interpolation_3d_general__uniform_src_grid(
     :param enable_simd: Whether the rest of the code enables SIMD optimizations, as this code requires simd_intrinsics.h (which includes SIMD-disabled options).
     :param project_dir: Directory of the project, to set the destination for simd_instrinsics.h .
     :param use_cpp: If True, emit a C++-compatible variant: map 'restrict'→'__restrict__' under C++, and switch sized array params to unsized pointer params (src_x0x1x2[], src_gf_ptrs[], dst_data[]).
+    :param pragma_mode: Controls pragma emission in generated C code. Supported values: "enabled", "removed", "commented".
 
     :return: None if in registration phase, else the updated NRPy environment.
 
@@ -36,6 +38,12 @@ def register_CFunction_interpolation_3d_general__uniform_src_grid(
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
         return None
+
+    supported_pragma_modes = {"enabled", "removed", "commented"}
+    if pragma_mode not in supported_pragma_modes:
+        raise ValueError(
+            f"Unsupported pragma_mode='{pragma_mode}'. Expected one of {sorted(supported_pragma_modes)}."
+        )
 
     if not enable_simd:
         copy_files(
@@ -53,7 +61,23 @@ def register_CFunction_interpolation_3d_general__uniform_src_grid(
 
     includes = ["stdio.h", "stdlib.h", "math.h", "interpolation_lagrange_uniform.h"]
 
-    prefunc = """
+    def render_pragma(pragma_line: str) -> str:
+        if pragma_mode == "enabled":
+            return pragma_line
+        if pragma_mode == "commented":
+            return f"// pragma disabled (pragma_mode=commented): {pragma_line}"
+        return ""
+
+    pragma_gcc_optimize = render_pragma('#pragma GCC optimize("unroll-loops")')
+    pragma_omp_parallel_for = render_pragma("#pragma omp parallel for")
+    pragma_omp_critical = render_pragma("#pragma omp critical")
+    pragma_gcc_reset_options = render_pragma("#pragma GCC reset_options")
+    if pragma_gcc_reset_options:
+        pragma_gcc_reset_options += (
+            " // Reset compiler optimizations after the function"
+        )
+
+    prefunc = r"""
 #ifndef REAL
 #define REAL double
 #endif
@@ -65,8 +89,9 @@ MAYBE_UNUSED static enum {
   INTERP3D_GENERAL_HORIZON_OUT_OF_BOUNDS
 } error_codes;
 
-#pragma GCC optimize("unroll-loops")
+__PRAGMA_GCC_OPTIMIZE__
 """
+    prefunc = prefunc.replace("__PRAGMA_GCC_OPTIMIZE__", pragma_gcc_optimize)
     if use_cpp:
         prefunc += r"""
 #ifndef restrict
@@ -146,7 +171,7 @@ The function assumes that the destination grid points are within the range of th
   const REAL xxmin_incl_ghosts2 = src_x0x1x2[2][0];
   int error_flag = INTERP_SUCCESS;
 
-#pragma omp parallel for
+__PRAGMA_OMP_PARALLEL_FOR__
   for (int dst_pt = 0; dst_pt < num_dst_pts; dst_pt++) {
     // Extract destination point coordinates.
     const REAL x0_dst = dst_x0x1x2[dst_pt][0];
@@ -163,7 +188,7 @@ The function assumes that the destination grid points are within the range of th
       if ((idx_center_x0 - NinterpGHOSTS < 0) || (idx_center_x0 + NinterpGHOSTS >= src_Nxx_plus_2NGHOSTS0) || (idx_center_x1 - NinterpGHOSTS < 0) ||
           (idx_center_x1 + NinterpGHOSTS >= src_Nxx_plus_2NGHOSTS1) || (idx_center_x2 - NinterpGHOSTS < 0) ||
           (idx_center_x2 + NinterpGHOSTS >= src_Nxx_plus_2NGHOSTS2)) {
-#pragma omp critical
+__PRAGMA_OMP_CRITICAL__
         {
           error_flag = INTERP3D_GENERAL_HORIZON_OUT_OF_BOUNDS;
           // If out of bounds, set indices to NinterpGHOSTS to avoid accessing invalid memory.
@@ -227,9 +252,13 @@ The function assumes that the destination grid points are within the range of th
 
   return error_flag;
 """
+    body = (
+        body.replace("__PRAGMA_OMP_PARALLEL_FOR__", pragma_omp_parallel_for)
+        .replace("__PRAGMA_OMP_CRITICAL__", pragma_omp_critical)
+    )
 
     postfunc = r"""
-#pragma GCC reset_options // Reset compiler optimizations after the function
+__PRAGMA_GCC_RESET_OPTIONS__
 
 #ifdef STANDALONE
 
@@ -493,6 +522,9 @@ cleanup:
 
 #endif // STANDALONE
 """
+    postfunc = postfunc.replace(
+        "__PRAGMA_GCC_RESET_OPTIONS__", pragma_gcc_reset_options
+    )
 
     cfc.register_CFunction(
         subdirectory="",
