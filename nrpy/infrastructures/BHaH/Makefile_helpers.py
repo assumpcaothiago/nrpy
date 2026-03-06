@@ -176,6 +176,7 @@ def _construct_makefile_content(
     target_rule: str,
     valgrind_rule: str,
     clean_rule: str,
+    extra_cpp_sources: Optional[List[str]] = None,
     use_openmp: bool = True,
 ) -> str:
     """
@@ -192,6 +193,7 @@ def _construct_makefile_content(
     :param target_rule: The Makefile rule for building the main target.
     :param valgrind_rule: The Makefile rule for the 'valgrind' target.
     :param clean_rule: The Makefile rule for the 'clean' target.
+    :param extra_cpp_sources: Optional list of additional C++ source files to compile and link.
     :param use_openmp: If True, add OpenMP flags; if False, omit them.
     :return: The complete string content of the Makefile.
     """
@@ -200,6 +202,12 @@ def _construct_makefile_content(
         f"CC = {cc}  # Locally overwrites CC to {cc}"
         if cc == "nvcc"
         else f"CC ?= {cc}  # assigns the value CC to {cc} only if environment variable CC is not already set"
+    )
+    cxx_line = "CXX ?= g++   # C++ compiler\n" if extra_cpp_sources else ""
+    cpp_compile_rule = (
+        "\n%.o: %.cpp $(COMMON_HEADERS)\n\t$(CXX) $(CXXFLAGS) $(INCLUDEDIRS) -c $< -o $@\n"
+        if extra_cpp_sources
+        else ""
     )
 
     if use_openmp:
@@ -225,6 +233,7 @@ LDFLAGS += $(OPENMP_FLAG)"""
 
     # Assemble the final Makefile string using an f-string template for clarity
     return f"""{cc_line}
+{cxx_line}
 
 CFLAGS = {cflags}
 CXXFLAGS = -I. -O2 -g -Wall -Wno-unknown-pragmas -march=native
@@ -239,6 +248,7 @@ all: {exec_or_library_name}
 
 %.o: %.{src_code_file_ext} $(COMMON_HEADERS)
 \t$(CC) $(CFLAGS) $(INCLUDEDIRS) -c $< -o $@
+{cpp_compile_rule}
 
 {target_rule}
 
@@ -262,6 +272,7 @@ def output_CFunctions_function_prototypes_and_construct_Makefile(
     lib_function_prefix: str = "",
     include_dirs: Optional[List[str]] = None,
     src_code_file_ext: str = "c",
+    extra_cpp_sources: Optional[List[str]] = None,
     use_openmp: bool = True,
 ) -> None:
     """
@@ -280,6 +291,7 @@ def output_CFunctions_function_prototypes_and_construct_Makefile(
     :param lib_function_prefix: Prefix to add to library function names.
     :param include_dirs: List of include directories.
     :param src_code_file_ext: Extension for C source files.
+    :param extra_cpp_sources: Optional list of additional C++ source files to compile and link.
     :param use_openmp: If True, add OpenMP flags; if False, omit them.
     :raises TypeError: If 'addl_libraries' is not a list.
 
@@ -341,6 +353,11 @@ def output_CFunctions_function_prototypes_and_construct_Makefile(
     obj_files_str = "OBJ_FILES = " + " ".join(
         f.replace(f".{src_code_file_ext}", ".o") for f in sorted(c_files, key=str.lower)
     )
+    if extra_cpp_sources:
+        if not isinstance(extra_cpp_sources, list):
+            raise TypeError("extra_cpp_sources must be a list!")
+        cpp_obj_files = [str(Path(src).with_suffix(".o")) for src in extra_cpp_sources]
+        obj_files_str += " " + " ".join(cpp_obj_files)
 
     # Linker flags string
     if addl_libraries and not isinstance(addl_libraries, list):
@@ -393,6 +410,7 @@ clean:
         target_rule=target_rule,
         valgrind_rule=valgrind_rule,
         clean_rule=clean_rule,
+        extra_cpp_sources=extra_cpp_sources,
         use_openmp=use_openmp,
     )
 
