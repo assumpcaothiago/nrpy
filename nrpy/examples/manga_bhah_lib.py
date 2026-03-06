@@ -52,22 +52,22 @@ par.set_parval_from_str("fp_type", fp_type)
 # Code-generation-time parameters:
 project_name = "bhah_lib"
 IDtype = "TOVola_interp"
-CoordSystem = "SinhCylindrical"
+CoordSystem = "Spherical"  # choices: "SinhSpherical", "SinhCylindrical"
 LapseEvolutionOption = "OnePlusLog"
 ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
-GammaDriving_eta = 1.0
-grid_physical_size = 50.0
+GammaDriving_eta = 7.117284045964958  # 1.0
+grid_physical_size = 4.5  # 50.0
 diagnostics_output_every = 0.1
 default_checkpoint_every = 0.1
 t_final = 5.0
 Nxx_dict = {
-    "SinhCylindrical": [110, 64, 300],
-    # "Spherical": [72, 12, 2],
+    # "SinhCylindrical": [110, 64, 300],
+    "Spherical": [200, 2, 2],
     # "SinhSpherical": [72, 12, 2],
     # "Cartesian": [64, 64, 64],
 }
 MoL_method = "RK4"
-fd_order = 4
+fd_order = 10
 radiation_BC_fd_order = 4
 separate_Ricci_and_BSSN_RHS = True
 enable_parallel_codegen = True
@@ -86,7 +86,7 @@ par.adjust_CodeParam_default("NUMGRIDS", NUMGRIDS)
 
 OMP_collapse = 1
 if "Spherical" in CoordSystem:
-    par.set_parval_from_str("symmetry_axes", "2")
+    # par.set_parval_from_str("symmetry_axes", "2") # Thiago says: turn off symmetry option
     OMP_collapse = 2  # about 2x faster
 if "Cylindrical" in CoordSystem:
     # par.set_parval_from_str("symmetry_axes", "1")  # Thiago says: turn off symmetry option
