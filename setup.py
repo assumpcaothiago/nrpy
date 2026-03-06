@@ -136,6 +136,30 @@ def discover_header_package_data(
     return {pkg: sorted(files) for pkg, files in result.items()}
 
 
+def discover_manga_helper_package_data(pkg_root_directory: str) -> Dict[str, List[str]]:
+    """
+    Discover non-header helper assets required by manga_bhah_lib code generation.
+
+    These assets are loaded via pkgutil.get_data(), so they must be included as package_data.
+
+    :param pkg_root_directory: Repository root.
+    :return: Mapping from package name to asset paths relative to that package.
+    """
+    root_path = Path(pkg_root_directory).resolve()
+    helpers_dir = root_path / "nrpy" / "infrastructures" / "manga" / "helpers"
+    if not helpers_dir.is_dir():
+        return {}
+
+    package_name = "nrpy.infrastructures.manga.helpers"
+    discovered_files: List[str] = []
+    for pattern in ("*.hpp", "*.cpp"):
+        discovered_files.extend(
+            sorted(path.name for path in helpers_dir.glob(pattern) if path.is_file())
+        )
+
+    return {package_name: sorted(set(discovered_files))} if discovered_files else {}
+
+
 if __name__ == "__main__":
     # Don't install NRPy if this is run from a doctest.
     if "DOCTEST_MODE" in os.environ:
@@ -151,6 +175,10 @@ if __name__ == "__main__":
 
     # Auto-discover header files
     auto_pkg_data = discover_header_package_data(dir_setup, top_package="nrpy")
+    for pkg_name, files in discover_manga_helper_package_data(dir_setup).items():
+        auto_pkg_data.setdefault(pkg_name, [])
+        auto_pkg_data[pkg_name].extend(files)
+        auto_pkg_data[pkg_name] = sorted(set(auto_pkg_data[pkg_name]))
 
     # Ensure py.typed is included for PEP 561 typing
     auto_pkg_data.setdefault("nrpy", [])
