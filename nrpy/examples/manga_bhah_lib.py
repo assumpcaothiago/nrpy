@@ -209,7 +209,10 @@ BHaH.general_relativity.constraints_eval.register_CFunction_constraints_eval(
 
 # Generate new MaNGa helper functions
 BHaH.BHaHAHA.interpolation_3d_general__uniform_src_grid.register_CFunction_interpolation_3d_general__uniform_src_grid(
-    enable_simd=enable_intrinsics, project_dir=project_dir
+    enable_simd=enable_intrinsics,
+    project_dir=project_dir,
+    use_cpp=True,
+    pragma_mode="commented",
 )
 manga.rescaledvU_from_vCartU.register_CFunction_compute_rescaledvU_from_vCartU(
     CoordSystem
@@ -324,6 +327,18 @@ copy_files(
     project_dir=project_dir,
     subdirectory="intrinsics",
 )
+# MaNGa bhah_lib helper assets (C wrapper header + nanoflann C++ bridge sources).
+copy_files(
+    package="nrpy.infrastructures.manga.helpers",
+    filenames_list=[
+        "bhah_lib.h",
+        "nanoflann.hpp",
+        "nanoflann_bridge.h",
+        "nanoflann_bridge.cpp",
+    ],
+    project_dir=project_dir,
+    subdirectory="./",
+)
 
 BHaH.Makefile_helpers.output_CFunctions_function_prototypes_and_construct_Makefile(
     project_dir=project_dir,
@@ -336,6 +351,7 @@ BHaH.Makefile_helpers.output_CFunctions_function_prototypes_and_construct_Makefi
     addl_libraries=["$(shell gsl-config --libs)"],
     CC=("nvcc" if parallelization == "cuda" else "autodetect"),
     src_code_file_ext=("cu" if parallelization == "cuda" else "c"),
+    extra_cpp_sources=["nanoflann_bridge.cpp"],
 )
 print(
     f"Finished! Now go into project/{project_name} and type `make` to build, then ./{project_name} to run."
