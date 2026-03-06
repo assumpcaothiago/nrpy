@@ -1,19 +1,20 @@
-// nanoflann_bridge.cpp
-//
-// C++ implementation of a C ABI bridge around nanoflann.
-// This lets pure-C BHaH code build/query a KD-tree without seeing C++ templates.
+/**
+ * C++ implementation of the C ABI bridge around nanoflann.
+ *
+ * This file keeps all C++ template usage internal, while exposing a C-callable API.
+ */
 
 #include "nanoflann_bridge.h"
 
-// nanoflann header-only library:
+// nanoflann header-only library.
 #include "nanoflann.hpp"
 
-#include <new>     // std::nothrow
 #include <cstddef> // std::size_t
+#include <new>     // std::nothrow
 
 namespace {
 
-/* Adaptor over a flat array: data[p*stride + coord_index]. */
+// Adaptor over a flat array: data[p * stride + coord_index].
 struct FlatArrayPointCloudAdaptor {
   const double *data{nullptr};
   int npts{0};
@@ -36,18 +37,18 @@ struct FlatArrayPointCloudAdaptor {
     return data[base + static_cast<std::size_t>(z_index)];
   }
 
-  template <class BBOX>
-  bool kdtree_get_bbox(BBOX &) const {
+  template <class BBOX> bool kdtree_get_bbox(BBOX &) const {
     return false; // no bounding-box acceleration
   }
 };
 
 using Metric = nanoflann::L2_Simple_Adaptor<double, FlatArrayPointCloudAdaptor>;
-using Index = nanoflann::KDTreeSingleIndexAdaptor<Metric, FlatArrayPointCloudAdaptor, 3, std::size_t>;
+using Index =
+    nanoflann::KDTreeSingleIndexAdaptor<Metric, FlatArrayPointCloudAdaptor, 3, std::size_t>;
 
 } // namespace
 
-/* Definition of the opaque handle. */
+// Definition of the opaque handle.
 struct BHaH_KDTree {
   FlatArrayPointCloudAdaptor adaptor;
   Index index;
@@ -59,9 +60,9 @@ struct BHaH_KDTree {
 
 namespace {
 
-static BHaH_KDTree *BHaH_kdtree_build_3d_impl(int npts, const double *data, int stride,
-                                              int x_index, int y_index, int z_index) {
-  // Basic validation
+static BHaH_KDTree *BHaH_kdtree_build_3d_impl(int npts, const double *data, int stride, int x_index,
+                                              int y_index, int z_index) {
+  // Step 1: Basic validation.
   if (npts <= 0 || data == nullptr || stride <= 0)
     return nullptr;
   if (x_index < 0 || y_index < 0 || z_index < 0)
@@ -69,32 +70,33 @@ static BHaH_KDTree *BHaH_kdtree_build_3d_impl(int npts, const double *data, int 
   if (x_index >= stride || y_index >= stride || z_index >= stride)
     return nullptr;
 
-  // Tunable: leaf size controls build/query tradeoff.
+  // Step 2: Set leaf size (controls build/query tradeoff).
   const int leaf_max_size = 10;
 
+  // Step 3: Build the KD-tree index.
   try {
-    BHaH_KDTree *tree =
-        new (std::nothrow) BHaH_KDTree(data, npts, stride, x_index, y_index, z_index, leaf_max_size);
+    BHaH_KDTree *tree = new (std::nothrow)
+        BHaH_KDTree(data, npts, stride, x_index, y_index, z_index, leaf_max_size);
     if (!tree)
       return nullptr;
 
     tree->index.buildIndex();
     return tree;
   } catch (...) {
-    // Never let exceptions cross a C ABI boundary.
+    // Exceptions must not cross the C ABI boundary.
     return nullptr;
   }
 }
 
 } // namespace
 
-extern "C" BHaH_KDTree *BHaH_kdtree_build_3d(int npts, const double *data, int stride,
-                                             int x_index, int y_index, int z_index) {
+extern "C" BHaH_KDTree *BHaH_kdtree_build_3d(int npts, const double *data, int stride, int x_index,
+                                             int y_index, int z_index) {
   return BHaH_kdtree_build_3d_impl(npts, data, stride, x_index, y_index, z_index);
 }
 
 extern "C" BHaH_KDTree *BHaH_kdtree_build_3d_xyz(int npts, const double *xyz) {
-  // xyz is packed: stride=3, indices 0,1,2
+  // Packed xyz layout: stride = 3, coordinate indices = {0, 1, 2}.
   return BHaH_kdtree_build_3d_impl(npts, xyz, 3, 0, 1, 2);
 }
 
@@ -121,6 +123,4 @@ extern "C" int BHaH_kdtree_query_1nn_3d(const BHaH_KDTree *tree, const double qu
   }
 }
 
-extern "C" void BHaH_kdtree_free(BHaH_KDTree *tree) {
-  delete tree;
-}
+extern "C" void BHaH_kdtree_free(BHaH_KDTree *tree) { delete tree; }
