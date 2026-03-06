@@ -65,7 +65,6 @@ def register_CFunction_manga_radial_initial_data() -> None:
 """
 
     cfc.register_CFunction(
-        subdirectory="BHAHLIB",
         includes=includes,
         prefunc=prefunc,
         desc=desc,
