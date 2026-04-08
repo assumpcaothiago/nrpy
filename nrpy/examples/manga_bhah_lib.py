@@ -52,7 +52,9 @@ par.set_parval_from_str("fp_type", fp_type)
 # Code-generation-time parameters:
 project_name = "bhah_lib"
 IDtype = "TOVola_interp"
-CoordSystem = "Spherical"  # choices: "SinhSpherical", "SinhCylindrical"
+CoordSystem = (
+    "Cartesian"  # choices: "Cartesian", "Spherical", "SinhSpherical", "SinhCylindrical"
+)
 LapseEvolutionOption = "OnePlusLog"
 ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
 GammaDriving_eta = 7.117284045964958  # 1.0
@@ -61,13 +63,13 @@ diagnostics_output_every = 0.1
 default_checkpoint_every = 0.1
 t_final = 5.0
 Nxx_dict = {
+    "Cartesian": [64, 64, 64],
     # "SinhCylindrical": [110, 64, 300],
-    "Spherical": [200, 2, 2],
+    # "Spherical": [200, 2, 2],
     # "SinhSpherical": [72, 12, 2],
-    # "Cartesian": [64, 64, 64],
 }
 MoL_method = "RK4"
-fd_order = 10
+fd_order = 4
 radiation_BC_fd_order = 4
 separate_Ricci_and_BSSN_RHS = True
 enable_parallel_codegen = True
@@ -227,7 +229,7 @@ manga.BHaH_setup.register_CFunction_BHaH_setup(
 manga.BHaH_get_metric_extrinsic_curvature.register_CFunction_BHaH_get_metric_extrinsic_curvature(
     CoordSystem=CoordSystem
 )
-manga.BHaH_checkpoint_and_diagnostics.register_CFunction_BHaH_checkpoint_and_diagnostics()
+manga.BHaH_output_data.register_CFunction_BHaH_output_data()
 manga.BHaH_evolve.register_CFunction_BHaH_evolve()
 manga.BHaH_set_TOV.register_CFunction_BHaH_set_TOV()
 manga.BHaH_set_PrimsAndPos_particles.register_CFunction_BHaH_set_PrimsAndPos_particles()
