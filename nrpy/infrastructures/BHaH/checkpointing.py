@@ -8,8 +8,20 @@ Author: Zachariah B. Etienne
         zachetie **at** gmail **dot* com
 """
 
+from typing import Union
+
 import nrpy.c_function as cfc
 import nrpy.params as par
+
+
+def _validate_int_cadence_default(name: str, value: Union[int, float]) -> int:
+    """Return an integer cadence default, rejecting fractional step counts."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be an integer-valued int or float")
+    int_value = int(value)
+    if value != int_value:
+        raise ValueError(f"{name} must be integer-valued; got {value}")
+    return int_value
 
 
 def register_CFunction_read_checkpoint(enable_bhahaha: bool = False) -> None:
@@ -232,16 +244,21 @@ loading the full checkpoint payload."""
 
 
 def register_CFunction_write_checkpoint(
-    default_checkpoint_every: float = 2.0,
+    default_checkpoint_every: Union[int, float] = 2.0,
     enable_multipatch: bool = False,
     enable_bhahaha: bool = False,
+    checkpoint_cadence_type: str = "time",
 ) -> None:
     """
     Register write_checkpoint CFunction for writing checkpoints.
 
-    :param default_checkpoint_every: The default checkpoint interval in physical time units.
+    :param default_checkpoint_every: The default checkpoint interval. This is in
+        physical time units for checkpoint_cadence_type="time" and in iteration
+        steps for checkpoint_cadence_type="step".
     :param enable_multipatch: Whether to enable multipatch support.
     :param enable_bhahaha: Whether to enable BHaHAHA.
+    :param checkpoint_cadence_type: "time" preserves the existing BHaH
+        time-based checkpoint cadence. "step" uses integer commondata->nn scheduling.
 
     Doctest:
     >>> import nrpy.c_function as cfc
@@ -257,8 +274,24 @@ def register_CFunction_write_checkpoint(
     ...    validation_desc = f"{name}__{parallelization}".replace(" ", "_")
     ...    validate_strings(generated_str, validation_desc, file_ext="cu" if parallelization == "cuda" else "c")
     """
+    if checkpoint_cadence_type not in ("time", "step"):
+        raise ValueError(
+            'checkpoint_cadence_type must be either "time" or "step"; '
+            f'got "{checkpoint_cadence_type}"'
+        )
+    checkpoint_every_type = "REAL"
+    checkpoint_every_default: Union[int, float] = default_checkpoint_every
+    if checkpoint_cadence_type == "step":
+        checkpoint_every_type = "int"
+        checkpoint_every_default = _validate_int_cadence_default(
+            "default_checkpoint_every", default_checkpoint_every
+        )
     par.register_CodeParameter(
-        "REAL", __name__, "checkpoint_every", default_checkpoint_every, commondata=True
+        checkpoint_every_type,
+        __name__,
+        "checkpoint_every",
+        checkpoint_every_default,
+        commondata=True,
     )
     parallelization = par.parval_from_str("parallelization")
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
@@ -307,23 +340,37 @@ static inline void BHAH_safe_write_impl(const void *ptr, size_t size, size_t nme
 
 """
 
-    body = r"""
-  char filename[256];
-  snprintf(filename, 256, "checkpoint-conv_factor%.2f.dat", commondata->convergence_factor);
-
+    if checkpoint_cadence_type == "step":
+        checkpoint_schedule_code = r"""
+  const int checkpoint_every = commondata->checkpoint_every;
+  if (checkpoint_every <= 0) return; // checkpoint_every <= 0 means do not checkpoint.
+  const int ready_to_write_checkpoint = commondata->nn % checkpoint_every == 0;
+"""
+    else:
+        checkpoint_schedule_code = r"""
   const REAL currtime = commondata->time, currdt = commondata->dt, outevery = commondata->checkpoint_every;
   if (outevery <= (REAL)0.0) return; // outevery <= 0 means do not checkpoint.
-  // Explanation of the if() below:
+  // Explanation of the checkpoint schedule below:
   // Step 1: round(currtime / outevery) gives the nearest integer n to the ratio currtime/outevery.
   // Step 2: Multiplying by outevery yields the nearest output time t_out = n * outevery.
   // Step 3: If fabs(t_out - currtime) < 0.5 * currdt, then currtime is as close to t_out as possible.
-  if (fabs(round(currtime / outevery) * outevery - currtime) < 0.5 * currdt) {
+  const int ready_to_write_checkpoint = fabs(round(currtime / outevery) * outevery - currtime) < 0.5 * currdt;
+"""
+    body = (
+        r"""
+  char filename[256];
+  snprintf(filename, 256, "checkpoint-conv_factor%.2f.dat", commondata->convergence_factor);
+"""
+        + checkpoint_schedule_code
+        + r"""
+  if (ready_to_write_checkpoint) {
     FILE *cp_file = fopen(filename, "wb");
     if (cp_file == NULL) {
       perror("write_checkpoint: Failed to open checkpoint file. Check permissions and disk space availability.");
       exit(1);
     } // END IF cp_file == NULL
 """
+    )
     if enable_bhahaha:
         body += r"""
     commondata_struct checkpoint_commondata = *commondata;
@@ -468,22 +515,28 @@ static inline void BHAH_safe_write_impl(const void *ptr, size_t size, size_t nme
 
 
 def register_CFunctions(
-    default_checkpoint_every: float = 2.0,
+    default_checkpoint_every: Union[int, float] = 2.0,
     enable_multipatch: bool = False,
     enable_bhahaha: bool = False,
+    checkpoint_cadence_type: str = "time",
 ) -> None:
     """
     Register CFunctions for checkpointing.
 
-    :param default_checkpoint_every: The default checkpoint interval in physical time units.
+    :param default_checkpoint_every: The default checkpoint interval. This is in
+        physical time units for checkpoint_cadence_type="time" and in iteration
+        steps for checkpoint_cadence_type="step".
     :param enable_multipatch: Whether to enable multipatch support.
     :param enable_bhahaha: Whether to enable BHaHAHA.
+    :param checkpoint_cadence_type: "time" preserves the existing BHaH
+        time-based checkpoint cadence. "step" uses integer commondata->nn scheduling.
     """
     register_CFunction_read_checkpoint(enable_bhahaha=enable_bhahaha)
     register_CFunction_write_checkpoint(
         default_checkpoint_every=default_checkpoint_every,
         enable_multipatch=enable_multipatch,
         enable_bhahaha=enable_bhahaha,
+        checkpoint_cadence_type=checkpoint_cadence_type,
     )
 
 

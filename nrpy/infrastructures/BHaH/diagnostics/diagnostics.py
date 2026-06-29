@@ -33,7 +33,7 @@ Author: Zachariah B. Etienne
 
 from inspect import currentframe as cfr
 from types import FrameType as FT
-from typing import Set, Union, cast
+from typing import Optional, Set, Union, cast
 
 import nrpy.c_function as cfc
 import nrpy.helpers.parallel_codegen as pcg
@@ -43,8 +43,29 @@ from nrpy.infrastructures import BHaH
 from nrpy.infrastructures.BHaH.diagnostics import output_raytracing_data
 
 
+def _validate_int_cadence_default(
+    name: str, value: Union[int, float], allow_nonpositive: bool = False
+) -> int:
+    """Return an integer cadence default, rejecting fractional step counts."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be an integer-valued int or float")
+    int_value = int(value)
+    if value != int_value:
+        raise ValueError(f"{name} must be integer-valued; got {value}")
+    if not allow_nonpositive and int_value <= 0:
+        raise ValueError(f"{name} must be positive; got {value}")
+    return int_value
+
+
+def _validate_c_identifier(name: str) -> str:
+    """Return a validated C identifier for generated parameter/member names."""
+    if not isinstance(name, str) or not name.isidentifier():
+        raise ValueError(f"{name} is not a valid C identifier")
+    return name
+
+
 def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
-    default_diagnostics_out_every: float,
+    default_diagnostics_out_every: Union[int, float],
     enable_nearest_diagnostics: bool,
     enable_interp_diagnostics: bool,
     enable_volume_integration_diagnostics: bool,
@@ -52,6 +73,9 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
     enable_psi4_diagnostics: bool = False,
     enable_bhahaha: bool = False,
     enable_raytracing_data_output: bool = False,
+    diagnostics_cadence_type: str = "time",
+    default_diagnostics_nearest_out_every: Optional[Union[int, float]] = None,
+    diagnostics_output_every_param_name: str = "diagnostics_output_every",
 ) -> Union[None, pcg.NRPyEnv_type]:
     """
     Construct and register a C function that drives all scheduled diagnostics.
@@ -105,6 +129,16 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
         output_raytracing_data(...) on output steps. This export writes the
         physical time together with final Cartesian metric and Christoffel
         component data needed directly by the raytracer.
+    :param diagnostics_cadence_type: Select diagnostics scheduling semantics.
+        "time" preserves the default BHaH behavior with REAL diagnostics_output_every.
+        "step" uses integer iteration counts in commondata->nn.
+    :param default_diagnostics_nearest_out_every: Optional integer default for the
+        nearest-gridpoint text diagnostics cadence in "step" mode. Values <= 0
+        disable nearest text output. If omitted, the nearest cadence defaults to
+        default_diagnostics_out_every.
+    :param diagnostics_output_every_param_name: Name of the generated commondata
+        cadence parameter. Defaults to "diagnostics_output_every" for backward
+        compatibility.
     :return: None if in registration phase (after recording the requested registration),
         else the updated NRPy environment.
 
@@ -115,13 +149,41 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
         return None
 
+    if diagnostics_cadence_type not in ("time", "step"):
+        raise ValueError(
+            'diagnostics_cadence_type must be either "time" or "step"; '
+            f'got "{diagnostics_cadence_type}"'
+        )
+    diagnostics_output_every_param_name = _validate_c_identifier(
+        diagnostics_output_every_param_name
+    )
+    diagnostics_output_every_type = "REAL"
+    diagnostics_output_every_default: Union[int, float] = default_diagnostics_out_every
+    diagnostics_nearest_output_every_default: Optional[int] = None
+    if diagnostics_cadence_type == "step":
+        diagnostics_output_every_type = "int"
+        diagnostics_output_every_default = _validate_int_cadence_default(
+            "default_diagnostics_out_every", default_diagnostics_out_every
+        )
+        if enable_nearest_diagnostics:
+            nearest_default = (
+                default_diagnostics_out_every
+                if default_diagnostics_nearest_out_every is None
+                else default_diagnostics_nearest_out_every
+            )
+            diagnostics_nearest_output_every_default = _validate_int_cadence_default(
+                "default_diagnostics_nearest_out_every",
+                nearest_default,
+                allow_nonpositive=True,
+            )
+
     # --- C Function Registration ---
     includes = [
         "BHaH_defines.h",
         "BHaH_function_prototypes.h",
         "diagnostics/diagnostic_gfs.h",
     ]
-    desc = """
+    desc = f"""
  * @file diagnostics.c
  * @brief Top-level driver that schedules and runs all enabled diagnostics.
  *
@@ -134,8 +196,12 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
  * diagnostics_volume_integration(...). Temporary storage is freed before returning.
  * Independently of output steps, a progress indicator is advanced every call.
  *
- * Scheduling rule (time-based with tolerance window):
- *   fabs(round(time / diagnostics_output_every) * diagnostics_output_every - time) < 0.5 * dt
+ * Scheduling:
+ * - Default BHaH builds use the time-based tolerance window
+ *     fabs(round(time / {diagnostics_output_every_param_name}) * {diagnostics_output_every_param_name} - time) < 0.5 * dt
+ * - Step-scheduled builds use commondata->nn modulo {diagnostics_output_every_param_name}.
+ *   In step mode, nearest-gridpoint text diagnostics may use the independent
+ *   diagnostics_nearest_output_every cadence.
  *
  * CUDA note (generation-time vs compile-time):
  * - If this file is generated with parallelization="cuda", the signature includes
@@ -148,7 +214,7 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
  * @pre
  * - commondata and griddata are non-null and initialized.
  * - commondata->NUMGRIDS >= 1 and commondata->NUMGRIDS <= MAXNUMGRIDS.
- * - diagnostics_output_every > 0.
+ * - {diagnostics_output_every_param_name} > 0.
  * - grid dimensions are valid, and backing arrays exist.
  * - Generated diagnostics interfaces and indices are consistent with the build.
  *
@@ -158,7 +224,7 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
  * - The progress indicator advances every call.
  *
  * @param[in,out] commondata  Global simulation metadata and run-time parameters
- *                            (e.g., time, dt, diagnostics_output_every, t_final, NUMGRIDS).
+ *                            (e.g., time, dt, {diagnostics_output_every_param_name}, t_final, NUMGRIDS).
  * @param[in,out] griddata_device  Device-side per-grid data used for device-to-host
  *                                 synchronization when generated with parallelization="cuda";
  *                                 omitted otherwise.
@@ -171,12 +237,20 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
 """
     parallelization = par.parval_from_str("parallelization")
     _ = par.CodeParameter(
-        "REAL",
+        diagnostics_output_every_type,
         __name__,
-        "diagnostics_output_every",
-        default_diagnostics_out_every,
+        diagnostics_output_every_param_name,
+        diagnostics_output_every_default,
         commondata=True,
     )
+    if diagnostics_cadence_type == "step" and enable_nearest_diagnostics:
+        _ = par.CodeParameter(
+            "int",
+            __name__,
+            "diagnostics_nearest_output_every",
+            diagnostics_nearest_output_every_default,
+            commondata=True,
+        )
     cfunc_type = "void"
     name = "diagnostics"
     params = (
@@ -185,21 +259,63 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
     if parallelization == "cuda":
         params = "commondata_struct *restrict commondata, griddata_struct *restrict griddata_device, griddata_struct *restrict griddata"
     newline = "\n"  # Keep newline sequences as named constants to avoid escape/brace pitfalls inside f-strings.
-    body = f"""
-  const REAL currtime = commondata->time, currdt = commondata->dt, outevery = commondata->diagnostics_output_every;
-  // Explanation of the if() below:                                                                                                                                                                                                           
-  // Step 1: round(currtime / outevery) gives the nearest integer n to the ratio currtime/outevery.                                                                                                                                           
-  // Step 2: Multiplying by outevery yields the nearest output time t_out = n * outevery.                                                                                                                                                     
-  // Step 3: If fabs(t_out - currtime) < 0.5 * currdt, then currtime is as close to t_out as possible.                                                                                                                                        
+    if diagnostics_cadence_type == "step":
+        scheduling_preamble = f"""
+  const int {diagnostics_output_every_param_name} = commondata->{diagnostics_output_every_param_name};
+  const int diagnostics_output_step = {diagnostics_output_every_param_name} > 0 && commondata->nn % {diagnostics_output_every_param_name} == 0;
+"""
+        raytracing_output_index_expr = (
+            f"commondata->nn / {diagnostics_output_every_param_name}"
+        )
+        if enable_nearest_diagnostics:
+            scheduling_preamble += """
+  const int diagnostics_nearest_output_every = commondata->diagnostics_nearest_output_every;
+  const int diagnostics_nearest_output_step = diagnostics_nearest_output_every > 0 && commondata->nn % diagnostics_nearest_output_every == 0;
+"""
+            diagnostics_run_condition = (
+                "diagnostics_output_step || diagnostics_nearest_output_step"
+            )
+        else:
+            diagnostics_run_condition = "diagnostics_output_step"
+    else:
+        scheduling_preamble = f"""
+  const REAL currtime = commondata->time, currdt = commondata->dt, outevery = commondata->{diagnostics_output_every_param_name};
+  // Explanation of the diagnostics_output_step calculation below:
+  // Step 1: round(currtime / outevery) gives the nearest integer n to the ratio currtime/outevery.
+  // Step 2: Multiplying by outevery yields the nearest output time t_out = n * outevery.
+  // Step 3: If fabs(t_out - currtime) < 0.5 * currdt, then currtime is as close to t_out as possible.
   // Note: This rule divides by outevery; outevery must be > 0.
-  if (fabs(round(currtime / outevery) * outevery - currtime) < 0.5 * currdt) {{
+  const int diagnostics_output_step = fabs(round(currtime / outevery) * outevery - currtime) < 0.5 * currdt;
+"""
+        raytracing_output_index_expr = "(int)round(currtime / outevery)"
+        if enable_nearest_diagnostics:
+            scheduling_preamble += "  const int diagnostics_nearest_output_step = diagnostics_output_step;\n"
+        diagnostics_run_condition = "diagnostics_output_step"
+    nearest_diagnostics_call = ""
+    if enable_nearest_diagnostics:
+        nearest_diagnostics_call = f"""
+    // Nearest-point diagnostics, at center, along y,z axes (1D) and xy and yz planes (2D).
+    if (diagnostics_nearest_output_step) {{
+      diagnostics_nearest(commondata, griddata, (const REAL **)diagnostic_gfs);
+    }}
+"""
+    output_cadence_diagnostics = f"""
+      {"// Interpolation diagnostics, at center, along x,y,z axes (1D) and xy and yz planes (2D)." if enable_interp_diagnostics else ""}
+      {"diagnostics_interp(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_interp_diagnostics else ""}
+      {"// Volume-integration diagnostics." if enable_volume_integration_diagnostics else ""}
+      {"diagnostics_volume_integration(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_volume_integration_diagnostics else ""}
+      {"// Decompose psi4 into modes." if enable_psi4_diagnostics else ""}
+      {"psi4_spinweightm2_decomposition(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_psi4_diagnostics else ""}
+"""
+    body = f"""
+{scheduling_preamble}
+  if ({diagnostics_run_condition}) {{
     // Optional hook: free MoL scratch storage before diagnostics and restore afterward.
     // Currently disabled in emitted code (calls are commented out below).
     // for (int grid = 0; grid < commondata->NUMGRIDS; grid++)
     //   MoL_free_intermediate_stage_gfs(&griddata[grid].gridfuncs);
 
-    {"// Find apparent horizon(s)." if enable_bhahaha else ""}
-    {"bhahaha_find_horizons(commondata, griddata);" + newline if enable_bhahaha else ""}
+    {"if (diagnostics_output_step) {" + newline + "      // Find apparent horizon(s)." + newline + "      bhahaha_find_horizons(commondata, griddata);" + newline + "    }" if enable_bhahaha else ""}
     // Allocate temporary storage for diagnostic_gfs.
     REAL *diagnostic_gfs[MAXNUMGRIDS];
     for (int grid = 0; grid < commondata->NUMGRIDS; grid++) {{
@@ -228,21 +344,14 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
 #endif // __CUDACC__
     }} // END LOOP over grids
 
-    {"const int raytracing_output_index = (int)round(currtime / outevery);" + newline if enable_raytracing_data_output else ""}
-    {"// Export final Cartesian raytracing data from the current BSSN state." if enable_raytracing_data_output else ""}
-    {"output_raytracing_data(commondata, griddata, raytracing_output_index);" + newline if enable_raytracing_data_output else ""}
+    {"if (diagnostics_output_step) {" + newline + "      const int raytracing_output_index = " + raytracing_output_index_expr + ";" + newline + "      // Export final Cartesian raytracing data from the current BSSN state." + newline + "      output_raytracing_data(commondata, griddata, raytracing_output_index);" + newline + "    }" if enable_raytracing_data_output else ""}
 
     // Set diagnostic_gfs; see generated diagnostics/diagnostic_gfs.h for the interface.
     diagnostic_gfs_set(commondata, griddata, diagnostic_gfs);
 
-    {"// Nearest-point diagnostics, at center, along y,z axes (1D) and xy and yz planes (2D)." if enable_nearest_diagnostics else ""}
-    {"diagnostics_nearest(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_nearest_diagnostics else ""}
-    {"// Interpolation diagnostics, at center, along x,y,z axes (1D) and xy and yz planes (2D)." if enable_interp_diagnostics else ""}
-    {"diagnostics_interp(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_interp_diagnostics else ""}
-    {"// Volume-integration diagnostics." if enable_volume_integration_diagnostics else ""}
-    {"diagnostics_volume_integration(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_volume_integration_diagnostics else ""}
-    {"// Decompose psi4 into modes." if enable_psi4_diagnostics else ""}
-    {"psi4_spinweightm2_decomposition(commondata, griddata, (const REAL **)diagnostic_gfs);" + newline if enable_psi4_diagnostics else ""}
+{nearest_diagnostics_call}
+    if (diagnostics_output_step) {{{output_cadence_diagnostics}
+    }}
 
     // Free temporary storage allocated to diagnostic_gfs.
     for(int grid=0; grid<commondata->NUMGRIDS; grid++)
@@ -251,7 +360,7 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
     // Optional hook: restore MoL scratch storage after diagnostics (currently disabled).
     // for (int grid = 0; grid < commondata->NUMGRIDS; grid++)
     //   MoL_malloc_intermediate_stage_gfs(commondata, &griddata[grid].params, &griddata[grid].gridfuncs);
-  }} // END IF: diagnostics output step
+  }} // END IF: diagnostics scheduled step
 
   progress_indicator(commondata, griddata);
 """
@@ -271,7 +380,7 @@ def _register_CFunction_diagnostics(  # pylint: disable=unused-argument
 def register_all_diagnostics(
     project_dir: str,
     set_of_CoordSystems: Set[str],
-    default_diagnostics_out_every: float,
+    default_diagnostics_out_every: Union[int, float],
     enable_nearest_diagnostics: bool,
     enable_interp_diagnostics: bool,
     enable_volume_integration_diagnostics: bool,
@@ -281,6 +390,9 @@ def register_all_diagnostics(
     enable_psi4_diagnostics: bool = False,
     enable_bhahaha: bool = False,
     enable_raytracing_data_output: bool = False,
+    diagnostics_cadence_type: str = "time",
+    default_diagnostics_nearest_out_every: Optional[Union[int, float]] = None,
+    diagnostics_output_every_param_name: str = "diagnostics_output_every",
 ) -> None:
     """
     Register and stage diagnostics-related C code and helper headers.
@@ -323,6 +435,14 @@ def register_all_diagnostics(
     :param enable_raytracing_data_output: If True, register and call the
         stage-1 raytracing-data exporter that writes final Cartesian metric and
         Christoffel data during the evolution.
+    :param diagnostics_cadence_type: "time" preserves the existing BHaH
+        time-based cadence. "step" uses integer commondata->nn scheduling.
+    :param default_diagnostics_nearest_out_every: Optional integer default for
+        nearest-gridpoint text diagnostics in "step" mode. Values <= 0 disable
+        nearest text output.
+    :param diagnostics_output_every_param_name: Name of the generated commondata
+        cadence parameter. Defaults to "diagnostics_output_every" for backward
+        compatibility.
     :raises ValueError: If raytracing-data export is enabled for CUDA code generation.
     :raises ValueError: If raytracing-data export is enabled without
         ``enable_rfm_precompute=True``.
@@ -392,6 +512,9 @@ def register_all_diagnostics(
         enable_psi4_diagnostics=enable_psi4_diagnostics,
         enable_bhahaha=enable_bhahaha,
         enable_raytracing_data_output=enable_raytracing_data_output,
+        diagnostics_cadence_type=diagnostics_cadence_type,
+        default_diagnostics_nearest_out_every=default_diagnostics_nearest_out_every,
+        diagnostics_output_every_param_name=diagnostics_output_every_param_name,
     )
     if enable_raytracing_data_output:
         output_raytracing_data.register_CFunction_output_raytracing_data(
