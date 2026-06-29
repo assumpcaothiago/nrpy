@@ -1,5 +1,7 @@
 from . import (
+    axis_interpolation_1d,
     auxevol_gfs_set_to_constant,
+    checkpoint_parfile_restart,
     diagnostic_gfs_set,
     diagnostics_nearest,
     diagnostics_volume_integration,

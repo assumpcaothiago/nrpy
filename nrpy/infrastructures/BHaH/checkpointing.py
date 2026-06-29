@@ -512,6 +512,21 @@ static inline void BHAH_safe_write_impl(const void *ptr, size_t size, size_t nme
         include_CodeParameters_h=False,
         body=body,
     )
+    body_now = body.replace(
+        checkpoint_schedule_code,
+        "\n  const int ready_to_write_checkpoint = 1;\n",
+        1,
+    )
+    cfc.register_CFunction(
+        prefunc=prefunc,
+        includes=includes,
+        desc="Write a checkpoint file immediately, ignoring checkpoint cadence",
+        cfunc_type=cfunc_type,
+        name="write_checkpoint_now",
+        params=params,
+        include_CodeParameters_h=False,
+        body=body_now,
+    )
 
 
 def register_CFunctions(

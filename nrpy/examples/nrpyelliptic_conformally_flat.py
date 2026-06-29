@@ -56,6 +56,13 @@ enable_simd_intrinsics = True
 grid_physical_size = 1.0e6
 t_final = grid_physical_size  # This parameter is effectively not used in NRPyElliptic
 nn_max = 10000  # Sets the maximum number of relaxation steps
+default_axis_interpolation_axis = "x"
+default_axis_interpolation_num_points = 1024
+default_axis_interpolation_x_min = -grid_physical_size
+default_axis_interpolation_x_max = grid_physical_size
+default_axis_interpolation_z_min = -grid_physical_size
+default_axis_interpolation_z_max = grid_physical_size
+default_axis_interpolation_offset = 1.0e-6
 
 
 def get_log10_residual_tolerance(fp_type_str: str = "double") -> float:
@@ -222,6 +229,9 @@ BHaH.numerical_grids_and_timestep.register_CFunctions(
     enable_CurviBCs=True,
 )
 BHaH.xx_tofrom_Cart.register_CFunction_xx_to_Cart(CoordSystem=CoordSystem)
+BHaH.xx_tofrom_Cart.register_CFunction__Cart_to_xx_and_nearest_i0i1i2(
+    CoordSystem=CoordSystem
+)
 
 # Diagnostics C code registration
 BHaH.diagnostics.diagnostics.register_all_diagnostics(
@@ -271,6 +281,15 @@ copy_files(
 register_CFunction_interpolation_3d_general__uniform_src_grid(
     enable_simd=enable_simd_intrinsics,
     project_dir=project_dir,
+)
+BHaH.nrpyelliptic.axis_interpolation_1d.register_CFunction_axis_interpolation_1d_output(
+    default_axis=default_axis_interpolation_axis,
+    default_num_points=default_axis_interpolation_num_points,
+    default_x_min=default_axis_interpolation_x_min,
+    default_x_max=default_axis_interpolation_x_max,
+    default_z_min=default_axis_interpolation_z_min,
+    default_z_max=default_axis_interpolation_z_max,
+    default_offset=default_axis_interpolation_offset,
 )
 
 if __name__ == "__main__" and enable_parallel_codegen:
@@ -418,6 +437,7 @@ BHaH.cmdline_input_and_parfiles.generate_default_parfile(
 BHaH.cmdline_input_and_parfiles.register_CFunction_cmdline_input_and_parfile_parser(
     project_name=project_name, cmdline_inputs=["convergence_factor"]
 )
+BHaH.nrpyelliptic.checkpoint_parfile_restart.register_CFunction_checkpoint_apply_parfile_updates_after_restart()
 gpu_defines_filename = BHaH.BHaH_device_defines_h.output_device_headers(
     project_dir, num_streams=num_cuda_streams
 )
@@ -436,9 +456,22 @@ write_checkpoint_call = (
     f"write_checkpoint(&commondata, "
     f"{'griddata_host, griddata_device' if parallelization == 'cuda' else 'griddata'});\n"
 )
+write_checkpoint_now_call = (
+    f"write_checkpoint_now(&commondata, "
+    f"{'griddata_host, griddata_device' if parallelization == 'cuda' else 'griddata'});\n"
+)
 diagnostics_call = (
     f"diagnostics(&commondata, "
     f"{'griddata_device, griddata_host' if parallelization == 'cuda' else 'griddata'});\n"
+)
+axis_interpolation_call = (
+    f"axis_interpolation_1d_output(&commondata, "
+    f"{'griddata_host' if parallelization == 'cuda' else 'griddata'});\n"
+)
+checkpoint_parfile_restart_call = (
+    "checkpoint_apply_parfile_updates_after_restart("
+    "&commondata, argc, argv, checkpoint_has_been_read, "
+    f"{'griddata_host' if parallelization == 'cuda' else 'griddata'});\n"
 )
 pre_MoL_step_forward_in_time = rf"""    stop_conditions_check(&commondata);
     if (commondata.stop_relaxation) {{
@@ -455,15 +488,21 @@ pre_MoL_step_forward_in_time = rf"""    stop_conditions_check(&commondata);
         commondata.diagnostics_nearest_output_every = original_diagnostics_nearest_output_every;
       }}
 
+      // Interpolate final uu along the requested Cartesian axis.
+      {axis_interpolation_call}
+
       // Force a checkpoint when stop condition is reached.
-      commondata.checkpoint_every = 1;
-      {write_checkpoint_call}
+      {write_checkpoint_now_call}
       break;
     }}
     {write_checkpoint_call}
 """
 post_MoL_step_forward_in_time = ""
 post_non_y_n_auxevol_mallocs = f"""
+  // On restart, let the parfile update compatible runtime/output parameters
+  // before recomputing auxevol gridfunctions or continuing relaxation.
+  {checkpoint_parfile_restart_call}
+
   for (int grid = 0; grid < commondata.NUMGRIDS; grid++) {{
     auxevol_gfs_set_to_constant(&commondata, &{compute_griddata}[grid].params, {compute_griddata}[grid].xx, &{compute_griddata}[grid].gridfuncs);
 #ifdef __CUDACC__
