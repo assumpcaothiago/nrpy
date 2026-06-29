@@ -58,10 +58,10 @@ t_final = grid_physical_size  # This parameter is effectively not used in NRPyEl
 nn_max = 10000  # Sets the maximum number of relaxation steps
 default_axis_interpolation_axis = "x"
 default_axis_interpolation_num_points = 1024
-default_axis_interpolation_x_min = -grid_physical_size
-default_axis_interpolation_x_max = grid_physical_size
-default_axis_interpolation_z_min = -grid_physical_size
-default_axis_interpolation_z_max = grid_physical_size
+default_axis_interpolation_x_min = -10.0
+default_axis_interpolation_x_max = 10.0
+default_axis_interpolation_z_min = -10.0
+default_axis_interpolation_z_max = 10.0
 default_axis_interpolation_offset = 1.0e-6
 
 
@@ -98,7 +98,7 @@ CoordSystem = "SinhSymTPCylindrical"
 Nxx_dict = {
     "SymTP": [128, 128, 16],
     "SinhSymTP": [128, 128, 16],
-    "SinhSymTPCylindrical": [64, 16, 64],
+    "SinhSymTPCylindrical": [64, 32, 64],
     "SinhCylindricalv2": [128, 16, 256],
     "SinhSpherical": [128, 64, 16],
 }
