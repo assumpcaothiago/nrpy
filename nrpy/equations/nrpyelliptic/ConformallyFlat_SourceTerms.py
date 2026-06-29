@@ -53,8 +53,9 @@ def compute_psi_background_and_ADD_times_AUU(
         "REAL", __name__, "bare_mass_1", 0.0, commondata=True
     )
 
-    # Step 0.b: position of the punctures in the z axis
-    zPunc = par.register_CodeParameter("REAL", __name__, "zPunc", 5.0, commondata=True)
+    # Step 0.b: half-separation of the punctures
+    xPunc = par.register_CodeParameter("REAL", __name__, "xPunc", 0.0, commondata=True)
+    zPunc = par.register_CodeParameter("REAL", __name__, "zPunc", 0.0, commondata=True)
 
     # Step 0.c.1: linear momentum 0
     P0U = par.register_CodeParameters(
@@ -85,7 +86,9 @@ def compute_psi_background_and_ADD_times_AUU(
     # Step 3.a: First copy array with Cartesian coordinates
     x0U = xxCart[:]
     x1U = xxCart[:]
-    # Step 3.b: Then shift z coordinates
+    # Step 3.b: Then shift puncture coordinates
+    x0U[0] -= xPunc
+    x1U[0] += xPunc
     x0U[2] -= zPunc
     x1U[2] += zPunc
 
