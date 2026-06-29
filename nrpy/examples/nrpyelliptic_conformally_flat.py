@@ -17,6 +17,9 @@ import nrpy.helpers.parallel_codegen as pcg
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
 from nrpy.infrastructures import BHaH
+from nrpy.infrastructures.BHaH.BHaHAHA.interpolation_3d_general__uniform_src_grid import (
+    register_CFunction_interpolation_3d_general__uniform_src_grid,
+)
 
 parser = argparse.ArgumentParser(
     description="NRPyElliptic Solver for Conformally Flat BBH initial data"
@@ -76,9 +79,9 @@ def get_log10_residual_tolerance(fp_type_str: str = "double") -> float:
 # Set tolerance for log10(residual) to stop relaxation
 log10_residual_tolerance = get_log10_residual_tolerance(fp_type_str=fp_type)
 default_compute_residual_every = 1
-default_diagnostics_nearest_output_every = 50
-default_checkpoint_every = 50
-eta_damping = 11.0
+default_diagnostics_nearest_output_every = 1000
+default_checkpoint_every = 1000
+eta_damping = 1.0
 MINIMUM_GLOBAL_WAVESPEED = 0.7
 CFL_FACTOR = 1.0  # NRPyElliptic wave speed prescription assumes this parameter is ALWAYS set to 1
 # CoordSystem = "SinhSpherical"
@@ -257,6 +260,18 @@ BHaH.nrpyelliptic.residual_H_compute_all_points.register_CFunction_residual_H_co
 
 # Register function to check for stop conditions
 BHaH.nrpyelliptic.stop_conditions_check.register_CFunction_stop_conditions_check()
+
+# Register function for Lagrange interpolation
+copy_files(
+    package="nrpy.infrastructures.BHaH.interpolation",
+    filenames_list=["interpolation_lagrange_uniform.h"],
+    project_dir=project_dir,
+    subdirectory="interpolation",
+)
+register_CFunction_interpolation_3d_general__uniform_src_grid(
+    enable_simd=enable_simd_intrinsics,
+    project_dir=project_dir,
+)
 
 if __name__ == "__main__" and enable_parallel_codegen:
     pcg.do_parallel_codegen()
