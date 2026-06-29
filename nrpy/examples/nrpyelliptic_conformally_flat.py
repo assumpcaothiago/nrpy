@@ -75,38 +75,51 @@ def get_log10_residual_tolerance(fp_type_str: str = "double") -> float:
 
 # Set tolerance for log10(residual) to stop relaxation
 log10_residual_tolerance = get_log10_residual_tolerance(fp_type_str=fp_type)
-default_diagnostics_output_every = 8e-2
-default_checkpoint_every = 50.0
+default_compute_residual_every = 1
+default_diagnostics_nearest_output_every = 50
+default_checkpoint_every = 50
 eta_damping = 11.0
 MINIMUM_GLOBAL_WAVESPEED = 0.7
 CFL_FACTOR = 1.0  # NRPyElliptic wave speed prescription assumes this parameter is ALWAYS set to 1
 # CoordSystem = "SinhSpherical"
-CoordSystem = "SinhSymTP"
+# CoordSystem = "SinhSymTP"
+CoordSystem = "SinhSymTPCylindrical"
 # CoordSystem = "SymTP"
 Nxx_dict = {
     "SymTP": [128, 128, 16],
     "SinhSymTP": [128, 128, 16],
+    "SinhSymTPCylindrical": [64, 16, 64],
     "SinhCylindricalv2": [128, 16, 256],
     "SinhSpherical": [128, 64, 16],
 }
 # Set parameters specific to SinhSymTP coordinates
-AMAX = grid_physical_size
-bScale = 5.0
-SINHWAA = 0.07
+if CoordSystem == "SinhSymTP":
+    AMAX = grid_physical_size
+    bScale = 5.0
+    SINHWAA = 0.07
 # Set parameters specific to SinhCylindricalv2 coordinates
-AMPLRHO = grid_physical_size
-AMPLZ = grid_physical_size
-SINHWRHO = 0.04
-SINHWZ = 0.04
-const_drho = 2.0e-5
-const_dz = 2.0e-5
+if CoordSystem == "SinhCylindricalv2":
+    AMPLRHO = grid_physical_size
+    AMPLZ = grid_physical_size
+    SINHWRHO = 0.04
+    SINHWZ = 0.04
+    const_drho = 2.0e-5
+    const_dz = 2.0e-5
 # Set parameters specific to SinhSpherical coordinates
-AMPL = grid_physical_size
-SINHW = 0.06
+if CoordSystem == "SinhSpherical":
+    AMPL = grid_physical_size
+    SINHW = 0.06
+# Set parameters specific to SinhSymTPCylindrical coordinates
+if CoordSystem == "SinhSymTPCylindrical":
+    AMPLXY = grid_physical_size
+    AMPLZ = grid_physical_size
+    bScaleXY = 5.0
+    SINHWXY = 0.07
+    SINHWZ = 0.08
 
 OMP_collapse = 1
 enable_checkpointing = True
-MoL_method = "RK4"
+MoL_method = "SSPRK54"  # "SSPRK33", "RK4"
 fd_order = 10
 radiation_BC_fd_order = 6
 enable_parallel_codegen = True
@@ -114,7 +127,8 @@ boundary_conditions_desc = "outgoing radiation"
 set_of_CoordSystems = {CoordSystem}
 num_cuda_streams = 1
 # fmt: off
-initial_data_type = "gw150914"  # choices are: "gw150914", "axisymmetric", and "single_puncture"
+# ID choices are: "gw150914", "axisymmetric_x_axis", axisymmetric_z_axis, and "single_puncture"
+initial_data_type = "axisymmetric_x_axis"
 
 q = 36.0 / 29.0
 Pr = -0.00084541526517121  # Radial linear momentum
@@ -143,7 +157,7 @@ gw150914_params = {
     "P1_z": -Pr,
 }
 
-axisymmetric_params = {
+axisymmetric_z_axis_params = {
     "zPunc": 5.0,
     "bare_mass_0": 0.5,
     "bare_mass_1": 0.5,
@@ -151,8 +165,15 @@ axisymmetric_params = {
     "S1_z": -0.2,
 }
 
+axisymmetric_x_axis_params = {
+    "xPunc": 5.0,
+    "bare_mass_0": 0.5,
+    "bare_mass_1": 0.5,
+    "S0_x": +0.2,
+    "S1_x": -0.2,
+}
+
 single_puncture_params = {
-    "zPunc": 0.0,
     "bare_mass_0": 0.5,
     "S0_z": 0.2,
 }
@@ -203,11 +224,14 @@ BHaH.xx_tofrom_Cart.register_CFunction_xx_to_Cart(CoordSystem=CoordSystem)
 BHaH.diagnostics.diagnostics.register_all_diagnostics(
     set_of_CoordSystems=set_of_CoordSystems,
     project_dir=project_dir,
-    default_diagnostics_out_every=default_diagnostics_output_every,
+    default_diagnostics_out_every=default_compute_residual_every,
+    default_diagnostics_nearest_out_every=default_diagnostics_nearest_output_every,
     enable_nearest_diagnostics=True,
     enable_interp_diagnostics=False,
     enable_volume_integration_diagnostics=True,
     enable_free_auxevol=False,
+    diagnostics_cadence_type="step",
+    diagnostics_output_every_param_name="compute_residual_every",
 )
 BHaH.nrpyelliptic.diagnostic_gfs_set.register_CFunction_diagnostic_gfs_set(
     enable_interp_diagnostics=False
@@ -274,7 +298,8 @@ BHaH.MoLtimestepping.register_all.register_CFunctions(
     rational_const_alias="static constexpr" if parallelization == "cuda" else "const",
 )
 BHaH.checkpointing.register_CFunctions(
-    default_checkpoint_every=default_checkpoint_every
+    default_checkpoint_every=default_checkpoint_every,
+    checkpoint_cadence_type="step",
 )
 
 BHaH.diagnostics.progress_indicator.register_CFunction_progress_indicator(
@@ -315,6 +340,13 @@ if CoordSystem == "SinhSpherical":
     par.adjust_CodeParam_default("AMPL", AMPL)
     par.adjust_CodeParam_default("SINHW", SINHW)
 
+if CoordSystem == "SinhSymTPCylindrical":
+    par.adjust_CodeParam_default("AMPLXY", AMPLXY)
+    par.adjust_CodeParam_default("AMPLZ", AMPLZ)
+    par.adjust_CodeParam_default("bScaleXY", bScaleXY)
+    par.adjust_CodeParam_default("SINHWXY", SINHWXY)
+    par.adjust_CodeParam_default("SINHWZ", SINHWZ)
+
 # Update parameters specific to initial data type
 if initial_data_type == "gw150914":
     for param, value in gw150914_params.items():
@@ -334,20 +366,29 @@ if initial_data_type == "gw150914":
 if initial_data_type == "single_puncture":
     for param, value in single_puncture_params.items():
         if param in [
-            "zPunc",
             "bare_mass_0",
             "S0_z",
         ]:
             par.adjust_CodeParam_default(param, value)
-
-if initial_data_type == "axisymmetric":
-    for param, value in axisymmetric_params.items():
+if initial_data_type == "axisymmetric_z_axis":
+    for param, value in axisymmetric_z_axis_params.items():
         if param in [
             "zPunc",
             "bare_mass_0",
             "bare_mass_1",
             "S0_z",
             "S1_z",
+        ]:
+            par.adjust_CodeParam_default(param, value)
+
+if initial_data_type == "axisymmetric_x_axis":
+    for param, value in axisymmetric_x_axis_params.items():
+        if param in [
+            "xPunc",
+            "bare_mass_0",
+            "bare_mass_1",
+            "S0_x",
+            "S1_x",
         ]:
             par.adjust_CodeParam_default(param, value)
 
@@ -380,15 +421,33 @@ write_checkpoint_call = (
     f"write_checkpoint(&commondata, "
     f"{'griddata_host, griddata_device' if parallelization == 'cuda' else 'griddata'});\n"
 )
-pre_MoL_step_forward_in_time = write_checkpoint_call
-post_MoL_step_forward_in_time = rf"""    stop_conditions_check(&commondata);
+diagnostics_call = (
+    f"diagnostics(&commondata, "
+    f"{'griddata_device, griddata_host' if parallelization == 'cuda' else 'griddata'});\n"
+)
+pre_MoL_step_forward_in_time = rf"""    stop_conditions_check(&commondata);
     if (commondata.stop_relaxation) {{
+      // If convergence occurs off the nearest-output cadence, write one final
+      // nearest-gridpoint snapshot of the converged state.
+      if (commondata.diagnostics_nearest_output_every > 0 &&
+          commondata.nn % commondata.diagnostics_nearest_output_every != 0) {{
+        const int original_compute_residual_every = commondata.compute_residual_every;
+        const int original_diagnostics_nearest_output_every = commondata.diagnostics_nearest_output_every;
+        commondata.compute_residual_every = 0;
+        commondata.diagnostics_nearest_output_every = 1;
+        {diagnostics_call}
+        commondata.compute_residual_every = original_compute_residual_every;
+        commondata.diagnostics_nearest_output_every = original_diagnostics_nearest_output_every;
+      }}
+
       // Force a checkpoint when stop condition is reached.
-      commondata.checkpoint_every = 1e-4*commondata.dt;
+      commondata.checkpoint_every = 1;
       {write_checkpoint_call}
       break;
     }}
+    {write_checkpoint_call}
 """
+post_MoL_step_forward_in_time = ""
 post_non_y_n_auxevol_mallocs = f"""
   for (int grid = 0; grid < commondata.NUMGRIDS; grid++) {{
     auxevol_gfs_set_to_constant(&commondata, &{compute_griddata}[grid].params, {compute_griddata}[grid].xx, &{compute_griddata}[grid].gridfuncs);
