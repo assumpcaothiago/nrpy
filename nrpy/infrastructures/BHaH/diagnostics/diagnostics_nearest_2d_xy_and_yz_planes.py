@@ -31,7 +31,7 @@ def bhah_plane_configs() -> Dict[str, Dict[str, Dict[str, Any]]]:
     Schema:
       plane_configs[PLANE][FAMILY] -> CONFIG, where:
         PLANE  : "xy" or "yz"
-        FAMILY : one of {"Cartesian","Cylindrical","Spherical","SymTP","Wedge"}
+        FAMILY : one of {"Cartesian","Cylindrical","Spherical","SymTP","SinhSymTPCylindrical","Wedge"}
         CONFIG : dict with keys:
             "fixed_dim" : str
             "fixed_val" : str or list[str]
@@ -44,7 +44,7 @@ def bhah_plane_configs() -> Dict[str, Dict[str, Dict[str, Any]]]:
     #
     # plane_configs[PLANE][FAMILY] -> CONFIG, where:
     #   PLANE  : "xy" or "yz"
-    #   FAMILY : one of {"Cartesian","Cylindrical","Spherical","SymTP","Wedge"}
+    #   FAMILY : one of {"Cartesian","Cylindrical","Spherical","SymTP","SinhSymTPCylindrical","Wedge"}
     #   CONFIG : dict with keys:
     #       "fixed_dim" : str
     #           Which grid index is held fixed to realize the requested plane.
@@ -78,6 +78,12 @@ def bhah_plane_configs() -> Dict[str, Dict[str, Dict[str, Any]]]:
                 "fixed_dim": "i2",
                 "fixed_val": "i2_mid",
                 # Sweep phi (outer) and rho (inner) at fixed z
+                "loop_dims": ["i1", "i0"],
+            },
+            "SinhSymTPCylindrical": {
+                # Fix z at mid-plane; sweep the elliptic transverse coordinates.
+                "fixed_dim": "i2",
+                "fixed_val": "i2_mid",
                 "loop_dims": ["i1", "i0"],
             },
             "Spherical": {
@@ -117,6 +123,12 @@ def bhah_plane_configs() -> Dict[str, Dict[str, Dict[str, Any]]]:
                 # Sweep z (outer) and rho (inner)
                 "loop_dims": ["i2", "i0"],
             },
+            "SinhSymTPCylindrical": {
+                # x=0 corresponds to xx1 near 0 and -pi for this transverse map.
+                "fixed_dim": "i1",
+                "fixed_val": ["i1_mid", "i1_pmin"],
+                "loop_dims": ["i2", "i0"],
+            },
             "Spherical": {
                 # yz-plane (x=0) -> choose phi near +/- pi/2 at all r,theta
                 "fixed_dim": "i2",
@@ -152,6 +164,8 @@ def get_coord_family(cs: str) -> str:
     """
     if cs.startswith("GeneralRFM_fisheye"):
         return "Cartesian"
+    if cs == "SinhSymTPCylindrical":
+        return "SinhSymTPCylindrical"
     plane_configs = bhah_plane_configs()
     for family in plane_configs["xy"]:
         if family in cs:
@@ -229,6 +243,7 @@ def register_CFunction_diagnostics_nearest_2d_xy_and_yz_planes(
     diagnostic gridfunctions. The plane selection and loop ordering are configured via a small
     data-driven table for Cartesian, Cylindrical, Spherical, SymTP, and Wedge families; some
     families emit multiple slices for a plane (for example, two phi slices near +/- pi/2 to realize x=0).
+    SinhSymTPCylindrical has its own plane rules because its transverse map is not ordinary cylindrical.
 
     :param CoordSystem: Name of the coordinate system family that specializes plane selection and the wrapper.
     :return: None if in registration phase, else the updated NRPy environment.
@@ -269,6 +284,7 @@ def register_CFunction_diagnostics_nearest_2d_xy_and_yz_planes(
  * Plane selection notes (examples, not exhaustive):
  *  - Cartesian: xy fixes i2 at mid; yz fixes i0 at mid.
  *  - Cylindrical: xy fixes z at mid; yz emits two phi slices near +/- pi/2 to realize x=0.
+ *  - SinhSymTPCylindrical: xy fixes z at mid; yz emits xx1 slices near 0 and -pi to realize x=0.
  *  - Spherical and SymTP: xy fixes the polar-like angle at mid; yz emits two phi-like slices near +/- pi/2.
  *  - Wedge: xy may emit two z-like slices at quarter indices; yz fixes the across-wedge index at mid.
  *
@@ -338,6 +354,7 @@ def register_CFunction_diagnostics_nearest_2d_xy_and_yz_planes(
   MAYBE_UNUSED const int i0_mid = params->Nxx_plus_2NGHOSTS0 / 2;
   MAYBE_UNUSED const int i1_mid = params->Nxx_plus_2NGHOSTS1 / 2;
   MAYBE_UNUSED const int i2_mid = params->Nxx_plus_2NGHOSTS2 / 2;
+  MAYBE_UNUSED const int i1_pmin = NGHOSTS;
   MAYBE_UNUSED const int i1_q1 = (int)(NGHOSTS + 0.25 * (REAL)N1int - 0.5);
   MAYBE_UNUSED const int i1_q3 = (int)(NGHOSTS + 0.75 * (REAL)N1int - 0.5);
   MAYBE_UNUSED const int i2_q1 = (int)(NGHOSTS + 0.25 * (REAL)N2int - 0.5);

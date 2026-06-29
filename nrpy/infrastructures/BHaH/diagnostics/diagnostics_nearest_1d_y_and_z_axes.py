@@ -3,11 +3,11 @@ C function registration for 1D diagnostics along the nearest y and z axes for a 
 
 This module constructs and registers the C helper routine "diagnostics_nearest_1d_y_and_z_axes".
 The generated C function samples gridfunction data without interpolation along axis-aligned
-lines that are nearest to the physical y- and z-axes for the specified grid. The caller is
-responsible for looping over grids. For each timestep, rows are appended to two persistent
-per-grid output files (one for y and one for z) whose names encode the coordinate system,
-grid number, and convergence factor. Each file begins with a one-line time comment and an
-axis-specific header, followed by rows whose first column is the axis coordinate.
+lines that are nearest to the physical axes for the specified grid. The caller is responsible
+for looping over grids. For each timestep, rows are appended to persistent per-grid output
+files whose names encode the coordinate system, grid number, and convergence factor. Each file
+begins with a one-line time comment and an axis-specific header, followed by rows whose first
+column is the axis coordinate.
 
 Function
 --------
@@ -32,15 +32,17 @@ def bhah_family_from_coord(CoordSystem: str) -> str:
     Shared between BHaH and superB diagnostics.
 
     :param CoordSystem: Name of the coordinate system (e.g., Cartesian, Spherical, Cylindrical, SymTP,
-                        Wedge, or Spherical_Ring variants).
-    :return: Coordinate family string (e.g., "Cartesian", "Spherical", "Cylindrical", "SymTP", "Wedge",
-             or "Spherical_Ring").
+                        SinhSymTPCylindrical, Wedge, or Spherical_Ring variants).
+    :return: Coordinate family string (e.g., "Cartesian", "Spherical", "Cylindrical", "SymTP",
+             "SinhSymTPCylindrical", "Wedge", or "Spherical_Ring").
     :raises ValueError: If CoordSystem does not match a supported family.
     """
     if ("Spherical" in CoordSystem) and ("Ring" in CoordSystem):
         return "Spherical_Ring"
     if CoordSystem.startswith("GeneralRFM_fisheye"):
         return "Cartesian"
+    if CoordSystem == "SinhSymTPCylindrical":
+        return "SinhSymTPCylindrical"
     for fam in ("Cartesian", "Spherical", "Cylindrical", "SymTP", "Wedge"):
         if fam in CoordSystem:
             return fam
@@ -49,7 +51,7 @@ def bhah_family_from_coord(CoordSystem: str) -> str:
 
 def bhah_axis_configs() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     """
-    Return axis_configs dict used to construct the 1D y/z lines.
+    Return axis_configs dict used to construct the 1D y/z axis lines.
 
     Structure:
       axis_configs[AXIS][FAMILY] -> list[LINE_SPEC]
@@ -60,7 +62,7 @@ def bhah_axis_configs() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     # axis_configs schema (dict of dicts):
     # axis_configs[AXIS][FAMILY] -> list[LINE_SPEC], where:
     #   AXIS   : "y" or "z" (the physical axis we will output as the first column)
-    #   FAMILY : one of {"Cartesian","Spherical","Cylindrical","SymTP","Wedge","Spherical_Ring"}
+    #   FAMILY : one of {"Cartesian","Spherical","Cylindrical","SymTP","SinhSymTPCylindrical","Wedge","Spherical_Ring"}
     #   LINE_SPEC is a dict with:
     #       "vary" : str      -> which grid index to iterate over ("i0", "i1", or "i2")
     #       "fixed": dict     -> all *other* indices held fixed at named helper indices
@@ -68,7 +70,7 @@ def bhah_axis_configs() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     #            values are names of C locals defined in `body` (e.g. "i0_mid","i2_q1",...)
     #
     # Notes:
-    # - We always convert (xx -> Cartesian) and then take xCart[1] for y, xCart[2] for z.
+    # - We always convert (xx -> Cartesian) and then take the requested Cartesian component.
     # - The specific fixed-point choices differ by coordinate family to pick the line
     #   that is geometrically "nearest" to the physical axis without interpolation.
     # - An empty list means: no meaningful axis line exists for that (AXIS, FAMILY).
@@ -151,6 +153,22 @@ def bhah_axis_configs() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
                     },
                 },
             ],
+            "SinhSymTPCylindrical": [
+                {
+                    "vary": "i0",
+                    "fixed": {
+                        "i1": "i1_mid",
+                        "i2": "i2_mid",
+                    },
+                },
+                {
+                    "vary": "i0",
+                    "fixed": {
+                        "i1": "i1_pmin",
+                        "i2": "i2_mid",
+                    },
+                },
+            ],
         },
         "z": {  # Lines used to sample along the physical z-axis (output column 0 = z)
             "Cartesian": [
@@ -215,6 +233,15 @@ def bhah_axis_configs() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
             "Spherical_Ring": [
                 # No unique z-axis line within a pure spherical ring configuration -> no samples
             ],
+            "SinhSymTPCylindrical": [
+                {
+                    "vary": "i2",
+                    "fixed": {
+                        "i0": "i0_rmin",
+                        "i1": "i1_mid",
+                    },
+                },
+            ],
         },
     }
     return axis_configs
@@ -225,7 +252,7 @@ def count_expr(lines: List[Dict[str, Any]]) -> str:
     Construct a C expression for the total number of interior sample points implied by `lines`.
 
     This helper maps each LINE_SPEC's varying index ("i0", "i1", "i2") to the corresponding interior
-    count symbol ("N0int", "N1int", "N1int") and returns a C expression that sums these counts.
+    count symbol ("N0int", "N1int", "N2int") and returns a C expression that sums these counts.
 
     :param lines: List of LINE_SPEC dictionaries, each containing a "vary" key.
     :return: C expression string for the total point count (e.g., "N0int + N2int" or "0").
@@ -245,7 +272,7 @@ def gen_fill(axis_char: str, lines: List[Dict[str, Any]]) -> str:
     Construct C code that fills (coord, idx3) samples for the requested physical axis from `lines`.
 
     The generated code loops over each LINE_SPEC, binds fixed indices, converts xx -> Cartesian, and
-    stores the selected axis coordinate (y or z) plus idx3 into the appropriate buffer and counter.
+    stores the selected axis coordinate plus idx3 into the appropriate buffer and counter.
     If `lines` is empty, a no-op stub is returned.
 
     :param axis_char: Physical axis selector ("y" or "z").
@@ -255,13 +282,12 @@ def gen_fill(axis_char: str, lines: List[Dict[str, Any]]) -> str:
     if not lines:
         return "(void)xx;  // no points for this axis/family\n"
 
-    # coord_idx selects the physical axis to store in data_point_1d_struct.coord:
-    #   "y" -> xCart[1], "z" -> xCart[2]
-    coord_idx = "1" if axis_char == "y" else "2"
+    coord_indices = {"y": "1", "z": "2"}
+    coord_idx = coord_indices[axis_char]
 
     # Names of the C arrays/counters we fill for each axis
-    arr = "data_points_y" if axis_char == "y" else "data_points_z"
-    cnt = "count_y" if axis_char == "y" else "count_z"
+    arr = f"data_points_{axis_char}"
+    cnt = f"count_{axis_char}"
 
     # Map Python-side index labels to dimension numbers used in params->Nxx_plus_2NGHOSTS{d}
     # i0 -> dim 0, i1 -> dim 1, i2 -> dim 2
@@ -286,7 +312,7 @@ def gen_fill(axis_char: str, lines: List[Dict[str, Any]]) -> str:
                     "  const int idx3 = IDX3P(params, i0, i1, i2);",
                     "  REAL xCart[3], xOrig[3] = { xx[0][i0], xx[1][i1], xx[2][i2] };",
                     "  xx_to_Cart(params, xOrig, xCart);",
-                    # Save the physical coordinate (y or z) and the flat 3D index
+                    # Save the requested physical coordinate and the flat 3D index
                     f"  {arr}[{cnt}].coord = xCart[{coord_idx}];",
                     f"  {arr}[{cnt}].idx3  = idx3;",
                     f"  {cnt}++;",
@@ -314,8 +340,8 @@ def register_CFunction_diagnostics_nearest_1d_y_and_z_axes(
     grid points only; no interpolation is used.
 
     :param CoordSystem: Name of the coordinate system used to specialize axis-line selection and
-                        wrapper generation (e.g., Cartesian, Spherical, Cylindrical, SymTP, Wedge,
-                        Spherical_Ring).
+                        wrapper generation (e.g., Cartesian, Spherical, Cylindrical,
+                        SinhSymTPCylindrical, SymTP, Wedge, Spherical_Ring).
     :return: None if in registration phase, else the updated NRPy environment.
 
     Doctests:
@@ -378,11 +404,11 @@ static int compare_by_coord(const void *a, const void *b) {
  *
  * For each axis, the routine:
  *   1) Selects one or more index-line samples based on the coordinate family (e.g., Cartesian,
- *      Spherical, Cylindrical, SymTP, Wedge, Spherical_Ring).
+ *      Spherical, Cylindrical, SinhSymTPCylindrical, SymTP, Wedge, Spherical_Ring).
  *   2) Converts logical coordinates xx to Cartesian via xx_to_Cart and extracts y (xCart[1]) or
  *      z (xCart[2]) as the axis coordinate.
  *   3) Buffers (axis_coord, idx3) pairs, then sorts them in ascending order using qsort.
- *   4) Writes a single-line time comment, an axis-specific header ("y" or "z"), and streams rows:
+ *   4) Writes a single-line time comment, an axis-specific header, and streams rows:
  *      [axis_coord, values of selected diagnostic gridfunctions].
  *
  * Gridfunction values are loaded from the flattened diagnostic array using IDX4Ppt with a 3D index

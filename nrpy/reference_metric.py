@@ -172,7 +172,7 @@ class ReferenceMetric:
             self.EigenCoord = "Cartesian"
             self.spherical_wedge_like()
         elif CoordSystem == "SinhSymTPCylindrical":
-            self.EigenCoord = "Cylindrical"
+            self.EigenCoord = "SinhSymTPCylindrical"
             self.sinh_symtp_cylindrical_like()
         elif "SymTP" in CoordSystem:
             self.EigenCoord = "SymTP"

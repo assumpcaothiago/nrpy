@@ -262,6 +262,7 @@ def register_CFunction_diagnostics_nearest_2d_xy_and_yz_planes(
       MAYBE_UNUSED const int i0_mid = params->Nxx_plus_2NGHOSTS0 / 2;
       MAYBE_UNUSED const int i1_mid = params->Nxx_plus_2NGHOSTS1 / 2;
       MAYBE_UNUSED const int i2_mid = params->Nxx_plus_2NGHOSTS2 / 2;
+      MAYBE_UNUSED const int i1_pmin = NGHOSTS;
       MAYBE_UNUSED const int i1_q1 = (int)(NGHOSTS + 0.25 * (REAL)N1int - 0.5);
       MAYBE_UNUSED const int i1_q3 = (int)(NGHOSTS + 0.75 * (REAL)N1int - 0.5);
       MAYBE_UNUSED const int i2_q1 = (int)(NGHOSTS + 0.25 * (REAL)N2int - 0.5);
