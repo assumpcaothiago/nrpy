@@ -6,7 +6,7 @@ This module defines the ReferenceMetric class which handles various
 functionalities related to the reference metric.
 
 Authors: Zachariah B. Etienne; zachetie **at** gmail **dot* com
-         SinhSymTP fixes:
+         SinhSymTP fixes and addition of SinhSymTPCylindrical coordinates:
          Thiago Assumpção; assumpcaothiago **at** gmail **dot** com
 """
 
@@ -171,6 +171,9 @@ class ReferenceMetric:
             # Wedges behave the same as Cartesian -- no inner boundaries; every face is an "outer boundary":
             self.EigenCoord = "Cartesian"
             self.spherical_wedge_like()
+        elif CoordSystem == "SinhSymTPCylindrical":
+            self.EigenCoord = "Cylindrical"
+            self.sinh_symtp_cylindrical_like()
         elif "SymTP" in CoordSystem:
             self.EigenCoord = "SymTP"
             self.prolate_spheroidal_like()
@@ -1554,6 +1557,105 @@ class ReferenceMetric:
         ]
         # END: Set universal attributes for all prolate-spheroidal-like coordinate systems:
 
+    def sinh_symtp_cylindrical_like(self) -> None:
+        """Initialize class for SinhSymTPCylindrical coordinates."""
+        PI = self.register_pi()
+
+        AMPLXY, AMPLZ = par.register_CodeParameters(
+            "REAL",
+            self.CodeParam_modulename,
+            ["AMPLXY", "AMPLZ"],
+            [10.0, 10.0],
+            add_to_parfile=self.add_rfm_params_to_parfile,
+            add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+        )
+        SINHWXY, SINHWZ, bScaleXY = par.register_CodeParameters(
+            "REAL",
+            self.CodeParam_modulename,
+            ["SINHWXY", "SINHWZ", "bScaleXY"],
+            [0.2, 0.2, 1.0],
+            add_to_glb_code_params_dict=self.add_CodeParams_to_glb_code_params_dict,
+        )
+
+        self.xxmin = [sp.sympify(0), -PI, sp.sympify(-1)]
+        self.xxmax = [sp.sympify(1), PI, sp.sympify(+1)]
+        self.grid_physical_size_dict = {
+            "AMPLXY": "grid_physical_size",
+            "AMPLZ": "grid_physical_size",
+        }
+
+        q_xy = self.Sinhv1(self.xx[0], AMPLXY, SINHWXY)
+        var1 = sp.sqrt(q_xy**2 + (bScaleXY * sp.cos(self.xx[1])) ** 2)
+        var2 = sp.sqrt(q_xy**2 + bScaleXY**2)
+        z_cyl = self.Sinhv1(self.xx[2], AMPLZ, SINHWZ)
+
+        self.xx_to_Cart[0] = var2 * sp.sin(self.xx[1])
+        self.xx_to_Cart[1] = q_xy * sp.cos(self.xx[1])
+        self.xx_to_Cart[2] = z_cyl
+
+        self.xxSph[0] = sp.sqrt(
+            self.xx_to_Cart[0] ** 2 + self.xx_to_Cart[1] ** 2 + self.xx_to_Cart[2] ** 2
+        )
+        self.xxSph[1] = sp.acos(self.xx_to_Cart[2] / self.xxSph[0])
+        self.xxSph[2] = sp.atan2(self.xx_to_Cart[1], self.xx_to_Cart[0])
+
+        s_cart = self.Cartx**2 + self.Carty**2 - bScaleXY**2
+        d_cart = sp.sqrt(s_cart**2 + 4 * bScaleXY**2 * self.Carty**2)
+        u_pos = (s_cart + d_cart) / 2
+        u_neg = 2 * bScaleXY**2 * self.Carty**2 / (d_cart - s_cart)
+
+        sqrt_u_pos = sp.sqrt(u_pos)
+        sqrt_u_neg = sp.sqrt(u_neg)
+        x0_pos = SINHWXY * sp.asinh(sqrt_u_pos * sp.sinh(1 / SINHWXY) / AMPLXY)
+        x0_neg = SINHWXY * sp.asinh(sqrt_u_neg * sp.sinh(1 / SINHWXY) / AMPLXY)
+        x1_pos = sp.atan2(
+            self.Cartx * sqrt_u_pos,
+            self.Carty * sp.sqrt(u_pos + bScaleXY**2),
+        )
+        x1_neg = sp.atan2(
+            self.Cartx * sqrt_u_neg,
+            self.Carty * sp.sqrt(u_neg + bScaleXY**2),
+        )
+
+        self.Cart_to_xx[0] = sp.Piecewise((x0_pos, s_cart >= 0), (x0_neg, True))
+        self.Cart_to_xx[1] = sp.Piecewise((x1_pos, s_cart >= 0), (x1_neg, True))
+        self.Cart_to_xx[2] = SINHWZ * sp.asinh(self.Cartz * sp.sinh(1 / SINHWZ) / AMPLZ)
+
+        self.scalefactor_orthog[0] = sp.diff(q_xy, self.xx[0]) * var1 / var2
+        self.scalefactor_orthog[1] = var1
+        self.scalefactor_orthog[2] = sp.diff(z_cyl, self.xx[2])
+
+        self.radial_like_dirns = [0, 2]
+
+        self.f0_of_xx0 = q_xy
+        self.f1_of_xx1 = sp.cos(self.xx[1])
+        self.f2_of_xx0 = var2
+        self.f3_of_xx2 = sp.diff(z_cyl, self.xx[2])
+        self.f4_of_xx1 = bScaleXY * self.f1_of_xx1
+
+        var1_funcform = sp.sqrt(self.f0_of_xx0_funcform**2 + self.f4_of_xx1_funcform**2)
+        self.scalefactor_orthog_funcform[0] = (
+            sp.diff(self.f0_of_xx0_funcform, self.xx[0])
+            * var1_funcform
+            / self.f2_of_xx0_funcform
+        )
+        self.scalefactor_orthog_funcform[1] = var1_funcform
+        self.scalefactor_orthog_funcform[2] = self.f3_of_xx2_funcform
+
+        self.UnitVectors = [
+            [
+                q_xy * sp.sin(self.xx[1]) / var1,
+                var2 * sp.cos(self.xx[1]) / var1,
+                sp.sympify(0),
+            ],
+            [
+                var2 * sp.cos(self.xx[1]) / var1,
+                -q_xy * sp.sin(self.xx[1]) / var1,
+                sp.sympify(0),
+            ],
+            [sp.sympify(0), sp.sympify(0), sp.sympify(1)],
+        ]
+
     def cylindrical_like(self) -> None:
         """
         Initialize class for Cylindrical-like coordinate systems.
@@ -1880,6 +1982,7 @@ supported_CoordSystems = [
     "SinhCylindricalv2n2",
     "SymTP",
     "SinhSymTP",
+    "SinhSymTPCylindrical",
     "LWedgeHSinhSph",
     "UWedgeHSinhSph",
     "RingHoleySinhSpherical",
@@ -1963,4 +2066,86 @@ if __name__ == "__main__":
             "FAILURE: SinhSymTP coordinate inversion validation (Cart -> xx -> Cart) FAILED."
         )
         print(is_zero_Cartx, is_zero_Carty, is_zero_Cartz)
+        sys.exit(1)
+
+    # --------------------------------------------------------------------------
+    # Add specific validation test for SinhSymTPCylindrical coordinate inversion.
+    # --------------------------------------------------------------------------
+    rfm_sinh_symtp_cyl = reference_metric["SinhSymTPCylindrical"]
+    default_param_values_by_name: Dict[str, sp.Expr] = {
+        "AMPLXY": sp.sympify(10),
+        "AMPLZ": sp.sympify(10),
+        "SINHWXY": sp.Rational(1, 5),
+        "SINHWZ": sp.Rational(1, 5),
+        "bScaleXY": sp.sympify(1),
+    }
+    default_param_subs: Dict[Any, Any] = {}
+    for expr in rfm_sinh_symtp_cyl.Cart_to_xx + rfm_sinh_symtp_cyl.xx_to_Cart:
+        for symbol in sp.sympify(expr).free_symbols:
+            if str(symbol) in default_param_values_by_name:
+                default_param_subs[symbol] = default_param_values_by_name[str(symbol)]
+
+    round_trip_points: List[Tuple[sp.Expr, sp.Expr, sp.Expr]] = [
+        (sp.Rational(3, 5), sp.Rational(6, 5), sp.Rational(1, 5)),
+        (sp.Rational(1, 10), sp.Rational(1, 4), -sp.Rational(1, 5)),
+    ]
+    branch_s_values: List[float] = []
+    max_round_trip_error = 0.0
+    for xx_point in round_trip_points:
+        xx_subs: Dict[Any, Any] = {
+            rfm_sinh_symtp_cyl.xx[i]: xx_point[i] for i in range(3)
+        }
+        cart_point = [
+            cast(
+                sp.Expr,
+                rfm_sinh_symtp_cyl.xx_to_Cart[i].subs(default_param_subs).subs(xx_subs),
+            )
+            for i in range(3)
+        ]
+        inverse_subs: Dict[Any, Any] = {
+            rfm_sinh_symtp_cyl.Cartx: cart_point[0],
+            rfm_sinh_symtp_cyl.Carty: cart_point[1],
+            rfm_sinh_symtp_cyl.Cartz: cart_point[2],
+        }
+        xx_inverse = [
+            cast(
+                sp.Expr,
+                sp.sympify(rfm_sinh_symtp_cyl.Cart_to_xx[i])
+                .subs(default_param_subs)
+                .subs(inverse_subs),
+            )
+            for i in range(3)
+        ]
+        xx_inverse_subs: Dict[Any, Any] = {
+            rfm_sinh_symtp_cyl.xx[i]: xx_inverse[i] for i in range(3)
+        }
+        cart_round_trip = [
+            cast(
+                sp.Expr,
+                rfm_sinh_symtp_cyl.xx_to_Cart[i]
+                .subs(default_param_subs)
+                .subs(xx_inverse_subs),
+            )
+            for i in range(3)
+        ]
+        s_value = cart_point[0] ** 2 + cart_point[1] ** 2 - sp.sympify(1)
+        branch_s_values.append(float(sp.N(s_value, 50)))
+        for i in range(3):
+            diff = sp.N(cart_round_trip[i] - cart_point[i], 50)
+            max_round_trip_error = max(max_round_trip_error, abs(complex(diff)))
+
+    if (
+        max_round_trip_error < 1.0e-25
+        and branch_s_values[0] >= 0.0
+        and branch_s_values[1] < 0.0
+    ):
+        print(
+            "PASS: SinhSymTPCylindrical coordinate inversion validation (xx -> Cart -> xx -> Cart)"
+        )
+    else:
+        print(
+            "FAILURE: SinhSymTPCylindrical coordinate inversion validation "
+            "(xx -> Cart -> xx -> Cart) FAILED."
+        )
+        print(max_round_trip_error, branch_s_values)
         sys.exit(1)
