@@ -11,9 +11,10 @@
 | Source | Provenance | Status | Mtime | Hash | Ingest |
 | --- | --- | --- | --- | --- | --- |
 | `core-top-level-package-modules` | Core top-level package modules from `find nrpy -maxdepth 1 -type f \( -name '*.py' -o -name '*.txt' -o -name 'py.typed' \)`, 12 files. | living | 2026-06-29 11:58:33 | sha256:4898e5f7d33e03dd3f5b30bc668746bd6043c20a29f68556aff22197ee69c6b0 | partial |
+| `helpers-package-modules` | Helper package files from `find nrpy/helpers -type f \( -name '*.py' -o -name '*.h' \)`, 21 files. | living | 2026-06-29 13:58:41 | sha256:a7f4734cc55bd7c571cd5879db516de03fb2a6551c454774ad04a94b99e567f6 | ingested |
 | `helpers-validation-and-reference-metric-tests` | Helpers, validation helpers, and reference metric tests from `nrpy/helpers`, `nrpy/validate_expressions`, and `nrpy/tests`, 38 files. | living | 2026-06-29 11:58:33 | sha256:039963e2bbdd73a4a7a19f62d360a3a5f5c755ca1f7d37f86841134027e80269 | partial |
 | `equation-modules-and-trusted-values` | Equation modules and generated trusted-value files from `nrpy/equations`, 311 files. | living | 2026-06-29 11:58:33 | sha256:8355737f318de5fa31ba3a56f4260565a6b646e61514c6569464329feff44090 | partial |
-| `infrastructure-modules-and-embedded-headers` | Infrastructure modules and embedded headers from `nrpy/infrastructures`, 364 files. | living | 2026-06-29 11:58:33 | sha256:502ba4f40c287b8f0748deee00f5fe4e2b71b2a4771efb89fa696cc57d66ec65 | partial |
+| `infrastructure-modules-and-embedded-headers` | Infrastructure modules and embedded headers from `nrpy/infrastructures`, 364 files. | living | 2026-06-29 15:34:39 | sha256:ae23973e29b30242334f4a1e6b9ea96884e7467edc5151805242fbde3c8b5bdc | partial |
 | `example-generators-and-companion-scripts` | Example generators and companion scripts from `nrpy/examples`, 35 files. | living | 2026-06-29 11:58:33 | sha256:744144d1ce74d36bd2b64021e7e1e2ccd9e94e38f35a5b56fa2a90c8d672eba0 | partial |
 | `ci-and-local-automation` | CI and local automation files from `.github`, 3 files. | living | 2026-06-09 17:07:33 | sha256:7a0c354fec49d1874eb1bfe456017e61e868b96127b7b0f4dd6deb52ee518ae4 | partial |
 
@@ -47,12 +48,34 @@ row above.
 | `.github/single_file_static_analysis.sh` | living | 2026-06-09 17:07:33 | sha256:ac927452e0ada5a0f1fe9a141b414dff2898896d6c8956b1c3ce4f2acbb6df96 |
 | `.github/full_nrpy_local_ci.sh` | living | 2026-06-09 17:07:33 | sha256:a14053488856de143b3302d304c2ad2b94f0c7e2c0af728ac70c11922bd1007b |
 | `nrpy/c_codegen.py` | living | 2026-06-29 11:58:33 | sha256:7b2be17cea0769db3379925a79646536e026dfeabbd06b48037dbea364be08d5 |
+| `nrpy/py_codegen.py` | living | 2026-06-29 13:58:41 | sha256:924430dce028f9c51e413e70cb8aa0bc1ca45cb6e1c9510d78a828e89caeb226 |
+| `nrpy/py_function.py` | living | 2026-06-29 13:58:41 | sha256:dfe29d4cf4959e7a6f45beaf785492a49790448470ddd26a46668004fd4bc22a |
 | `nrpy/c_function.py` | living | 2026-06-29 11:58:33 | sha256:336ebca412f844a67257d560d07423397d18b4cd95ede90fd18b2e5a011c5a5f |
 | `nrpy/grid.py` | living | 2026-06-29 11:58:33 | sha256:99c8844226246b0c41a1327f547cc22f321aa4bdf1f7cb8657360efc40e86dbe |
 | `nrpy/params.py` | living | 2026-06-29 11:58:33 | sha256:576a2eb79c4d709fbe111ee11f6be6e383be3b2da401c1301c1f01befb800079 |
 | `nrpy/indexedexp.py` | living | 2026-06-29 11:58:33 | sha256:c1b2a0021aecd24a8270c3cb1436c8f48aaca06395a73fe6a9e585025060a5a1 |
 | `nrpy/reference_metric.py` | living | 2026-06-29 11:58:33 | sha256:d1ebe9753c165e14d9c8973a92e1a8b98e744a50cdc5585cbea5073a553771a7 |
 | `nrpy/finite_difference.py` | living | 2026-06-29 11:58:33 | sha256:d6e4e5a216718b310c9612491fcfcca1107aca9b8d7a758cd67a9f7768422e53 |
+| `nrpy/helpers/expr_tree.py` | living | 2026-06-29 13:58:41 | sha256:8dc68d2981a486c869aaa46e43acf1a127e681a93fa1bfc2fe9c02bcc1fedd8e |
+| `nrpy/helpers/expression_utils.py` | living | 2026-06-29 13:58:41 | sha256:d068450d37e8f2c5117a3a909b8a04559bd21a632715d8e2bda89907d141cefa |
+| `nrpy/helpers/float_to_rational.py` | living | 2026-06-29 13:58:41 | sha256:5fcb30e62cd1bdbea04dd67c074bc68631ac151ba655edcd9ce5adea1ce4dda0 |
+| `nrpy/helpers/functional.py` | living | 2026-06-29 13:58:41 | sha256:60914a6df754c4a0998f5f9d5a46fb35f27802e9de4bee6066fa742d1ed8a52c |
+| `nrpy/helpers/cse_preprocess_postprocess.py` | living | 2026-06-29 13:58:41 | sha256:db76a8c01651365de5ab00f69ea4aff631a0e9020f84b7411b8d872549aaea71 |
+| `nrpy/helpers/custom_c_codegen_functions.py` | living | 2026-06-29 13:58:41 | sha256:c0da4d28d247f60b107e3832cfd36bbe8fa16c7d12a143f96a2ee20682f4d8e9 |
+| `nrpy/helpers/jax_printer.py` | living | 2026-06-29 13:58:41 | sha256:3371ea1989ae5a0fe872f8fe4916d3c875494a856865101b5c2caa5c312e6974 |
+| `nrpy/helpers/simd.py` | living | 2026-06-29 13:58:41 | sha256:39afa854bd3fb780bf35cf0bc05f3a21bd74d6797bfc63d5eb31761505ade8dc |
+| `nrpy/helpers/simd_intrinsics.h` | living | 2026-06-29 13:58:41 | sha256:449aaf17b8af5e71d19a9d1983e256e73479d4f9081f938c4420102a7086efca |
+| `nrpy/helpers/cuda_intrinsics.h` | living | 2026-06-29 13:58:41 | sha256:1099aa36f9b9151ea73656e6dca9eb33c2f1a13e8cda230b8477e71e6e12b34f |
+| `nrpy/helpers/loop.py` | living | 2026-06-29 13:58:41 | sha256:4271134f8c60895d3243778e356b9add7d034260ac2a9315cf2ec3e1cfc5221f |
+| `nrpy/helpers/parallelization/gpu_kernel.py` | living | 2026-06-29 13:58:41 | sha256:eddc36f080048b6efa676ec1a3ce72aa81bdf0dd3c51a0411fa894c41788de12 |
+| `nrpy/helpers/parallelization/utilities.py` | living | 2026-06-29 13:58:41 | sha256:6078e43f54d509312105cf85a5b19cb91a15c28ad63996e79cbe1ca3ea17e73c |
+| `nrpy/helpers/parallel_codegen.py` | living | 2026-06-29 13:58:41 | sha256:ddadeae7617cce81e8d3d57410237579e6a8b07aba2cd26379261930f9b1b214 |
+| `nrpy/helpers/parallelization/__init__.py` | living | 2026-06-29 13:58:41 | sha256:5776ba86b2f78cdae3487b55c1a954aa968e5671a326726874dd3a9c164afaa5 |
+| `nrpy/helpers/generic.py` | living | 2026-06-29 13:58:41 | sha256:b795553804c68b267da49bee17b785f697f352ebd5d8a3ae7e9e0528535af7cc |
+| `nrpy/helpers/cached_functions.py` | living | 2026-06-29 13:58:41 | sha256:30d914c4be69d113e1ba810d24fb47522d5420e55eabfaab457678e0deb597ca |
+| `nrpy/helpers/conditional_file_updater.py` | living | 2026-06-29 13:58:41 | sha256:b63696b30756281d91a95e62964bb865aaa5515776e2238831253a9da1e8fc42 |
+| `nrpy/helpers/colorize_text.py` | living | 2026-06-29 13:58:41 | sha256:17de9bfab45dcc32cc753901034426ffc79b3ecb65e2ffe767d77e6ad944726e |
+| `nrpy/helpers/type_annotation_utilities.py` | living | 2026-06-29 13:58:41 | sha256:3020b9613f0f276bda86010e73e6b5ea8ec5fde21bfde35557e63e4e7a525f61 |
 | `nrpy/validate_expressions/validate_expressions.py` | living | 2026-06-29 11:58:33 | sha256:25c98a2f11ba153ee471317b8f51de7603b0063e1b808671d1b882e3040f76b3 |
 | `nrpy/equations/general_relativity/BSSN_RHSs.py` | living | 2026-06-29 11:58:33 | sha256:d59ff6c2902060f5564159785bc4d21190621284ff2a07475a4de90642279dc3 |
 | `nrpy/equations/general_relativity/BSSN_quantities.py` | living | 2026-06-29 11:58:33 | sha256:65464c8af6ba2eaddcb7c4a814f35eb8980f24d41ace4c612b38818f64906c9d |
@@ -67,11 +90,35 @@ row above.
 | `nrpy/infrastructures/BHaH/griddata_commondata.py` | living | 2026-06-29 11:58:33 | sha256:d65600e26c665d7af4c267868ee96744c9502bcea20a11d25f9ff6e8e789a836 |
 | `nrpy/infrastructures/BHaH/numerical_grids_and_timestep.py` | living | 2026-06-29 11:58:33 | sha256:7bf1bc7a473cf0a3629991249d8d9264cbbd373c354949ae32d8403efa6068e9 |
 | `nrpy/infrastructures/BHaH/rfm_precompute.py` | living | 2026-06-29 11:58:33 | sha256:02b8ad1a43a65d3000a9e923a03f2292052d2f9486860962855078e148615b5b |
+| `nrpy/infrastructures/superB/main_chare.py` | living | 2026-06-29 14:47:32 | sha256:bf9e686ebf58f86cfa5b4d23aca1eab5523dde80001d87b377d6bd49b6d2620d |
+| `nrpy/infrastructures/superB/timestepping_chare.py` | living | 2026-06-29 14:47:32 | sha256:4a88fadf7223f4ef5bcdd3757792bfdf8dd105139c8126ae1bbcbb02d5392d6b |
+| `nrpy/infrastructures/superB/Makefile_helpers.py` | living | 2026-06-29 14:47:32 | sha256:f52184fc4cfd001bafdc48a838cf8f5fc36799459b27f580a382bd3ad6d014f4 |
+| `nrpy/infrastructures/superB/numerical_grids.py` | living | 2026-06-29 14:47:32 | sha256:ffcae7d68c857cb412ea4b1f9f7203df6d8c346b1dedc27b722c0305546774b8 |
+| `nrpy/infrastructures/superB/chare_communication_maps.py` | living | 2026-06-29 14:47:32 | sha256:0038c5502115bba130967c50c24a57e0b783a15e02d1158f2154ca4f0079ab1e |
+| `nrpy/infrastructures/superB/CurviBoundaryConditions.py` | living | 2026-06-29 14:47:32 | sha256:84eb1899c81cf74fae6fae9bd7ce6d6dd700ebbf0914d5a3aa4fc7c6d0a24692 |
+| `nrpy/infrastructures/superB/MoL.py` | living | 2026-06-29 14:47:32 | sha256:f4e69bd2f074924bda00d8c296cc5e9db1b58f4dc770fb989b109932f86f87e5 |
+| `nrpy/infrastructures/superB/initial_data.py` | living | 2026-06-29 14:47:32 | sha256:397c6d6c16867be2a0f655ca2454e375b04652dc4a0b624ca6f93b5bf351ede6 |
+| `nrpy/infrastructures/superB/BHaH_implementation.py` | living | 2026-06-29 14:47:32 | sha256:3373dfedefc3a55909952652522e01c9d4bcaf928174a9df81f06d6dbc62331d |
+| `nrpy/infrastructures/superB/horizon_finder_chare.py` | living | 2026-06-29 14:47:32 | sha256:602b2ca252444b635ffc6d4fc05e3e2770a580b26f7f49a95b9b27146803d19c |
+| `nrpy/infrastructures/superB/interpolator3d_chare.py` | living | 2026-06-29 14:47:32 | sha256:b6ee8d36c45c4bde3357020973e2ed9661d1abcf7407b94f6b0ddc264cc911eb |
+| `nrpy/infrastructures/superB/diagnostics/diagnostics.py` | living | 2026-06-29 14:47:32 | sha256:904530c81902199a1ffc2426d49b36ce794d0434a6da826d77fe28a72914e5d2 |
+| `nrpy/infrastructures/superB/diagnostics/diagnostics_nearest_grid_center.py` | living | 2026-06-29 14:47:32 | sha256:625d55f6e3650d27d8661f8657cf2afdf7c14a9be2f7971d89211f2e52f2a762 |
+| `nrpy/infrastructures/superB/diagnostics/diagnostics_nearest_1d_y_and_z_axes.py` | living | 2026-06-29 14:47:32 | sha256:131276098bf002023e1b5cd6a910d84dc937cf8fe6b92478680901d6f7a64e8b |
+| `nrpy/infrastructures/superB/diagnostics/diagnostics_nearest_2d_xy_and_yz_planes.py` | living | 2026-06-29 14:47:32 | sha256:4345d6e169e9ca2b23b7d3d06b32233890a70f19074e354447a502e76dea3b64 |
+| `nrpy/infrastructures/superB/general_relativity/diagnostics_nearest.py` | living | 2026-06-29 14:47:32 | sha256:1fb42b27715f846406135bcfe6da9cda18a4edb5622d5604deb8187f0e821ea7 |
+| `nrpy/infrastructures/superB/general_relativity/psi4_spinweightm2_decomposition.py` | living | 2026-06-29 14:47:32 | sha256:a9f1a844019ccb8a8ec7d6707d18cea5c580b38fc5cacebadce2d889a6363915 |
+| `nrpy/infrastructures/superB/nrpyelliptic/diagnostics_nearest.py` | living | 2026-06-29 14:47:32 | sha256:cdd19f27b851f3d7098a8d3e344d3cd0dd0c3e46c8f0d8f277f9c9e0822ab998 |
+| `nrpy/infrastructures/superB/superB/superB_pup.py` | living | 2026-06-29 14:47:32 | sha256:e3136e5f892d543ebfdfac98ead3c568704dc93c7d72efb7acf9378e42e3dd01 |
+| `nrpy/infrastructures/superB/superB/superB.h` | living | 2026-06-29 14:47:32 | sha256:47859ee15811ce98fb367ae99bb3f1acb24abb5748d8d8748c27f46c72cb7813 |
+| `nrpy/infrastructures/superB/superB/superB_pup_function_prototypes.h` | living | 2026-06-29 15:34:39 | sha256:51572f03d5121d99174be9ccca70ec1d7ca3526a0b2ca263b4acfb1a112f9053 |
 | `nrpy/tests/reference_metric_Cartesian.py` | living | 2026-06-29 11:58:33 | sha256:8dfc73ed8d53b1c56f2721eb085702390e04b351ef035ad167016e1acc07f476 |
 | `nrpy/tests/reference_metric_Spherical.py` | living | 2026-06-29 11:58:33 | sha256:fa562e7e0dd7ba64b95129f4c4a26b565eccad9b96b783b12e3573d093efa474 |
 | `nrpy/tests/reference_metric_GeneralRFM_fisheyeN2.py` | living | 2026-06-29 11:58:33 | sha256:4dd315d1777e16c6cf03efe76713f377979e9baef55da8ea8206d71c186b51b5 |
 | `nrpy/examples/wave_equation_cartesian.py` | living | 2026-06-29 11:58:33 | sha256:d3337a4f2aec6ee2d6e44967d3b33d8397116acc4fdffcd606960c0250f5d986 |
 | `nrpy/examples/two_blackholes_collide.py` | living | 2026-06-29 11:58:33 | sha256:47751a1bf77ce2dee2873b437bae41e492f2e807987c52ee3fe8a58ea10ecf2c |
+| `nrpy/examples/superB_two_blackholes_collide.py` | living | 2026-06-29 14:47:32 | sha256:7423369f397c72b0f61eb479ceeea3e5e613ce05b2b5ee0a1acae8ad7a84751f |
+| `nrpy/examples/superB_blackhole_spectroscopy.py` | living | 2026-06-29 14:47:32 | sha256:fc69305f0472d889e4f354cb352250f38a99b68642938fcade0a0e6287a4cdf6 |
+| `nrpy/examples/superB_nrpyelliptic_conformally_flat.py` | living | 2026-06-29 14:47:32 | sha256:af0ba41012b4d27258e1f99a20789d458cdbae21a179b4edcc42f7745b4a4fe2 |
 | `nrpy/examples/tests/sebob_consistency_check.py` | living | 2026-06-29 11:58:33 | sha256:af7a994e86157842efd5ad93459c19c8fa811a4b523ea3585a63bb2172aa67d2 |
 | `nrpy/examples/tests/sebobv2_consistency_check.py` | living | 2026-06-29 11:58:33 | sha256:cfe3b83c41d9006940c3f5388dc6479abeeffb1da0791db4e9850a2bdaa394f8 |
 | `nrpy/equations/basis_transforms/jacobians.py` | living | 2026-06-29 11:58:33 | sha256:108739db4e1643d56a42fe867c17544be49858effef7be759bee798ac36c03f7 |
@@ -184,10 +231,15 @@ row above.
 | Source | Provenance | Status | Accessed | Ingest | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `https://arxiv.org/abs/2111.02424` | arXiv abstract page for arXiv:2111.02424. | living | 2026-06-29 | partial | NRPyElliptic background for hyperbolic relaxation and conformally flat binary-puncture initial data. |
+| `https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html` | Intel Intrinsics Guide landing page. | living | 2026-06-29 | partial | SSE, AVX, AVX512, and intrinsic-family terminology for SIMD helper documentation. |
+| `https://docs.nvidia.com/cuda/cuda-programming-guide/index.html` | NVIDIA CUDA C++ Programming Guide. | living | 2026-06-29 | partial | CUDA C++ terminology for SIMD, CUDA header, and GPU kernel helper documentation. |
 | `https://link.aps.org/doi/10.1103/PhysRev.55.374` | DOI landing page for `10.1103/PhysRev.55.374`. | living | 2026-06-29 | partial | Original Oppenheimer-Volkoff stellar-equilibrium background. |
 | `https://web2.ph.utexas.edu/~gsudama/pub/1967_008.pdf` | PDF URL for Goldberg et al. spin-weighted spherical-harmonic formula reference. | living | 2026-06-29 | partial | Goldberg-formula background for spin-weighted spherical harmonics. |
 | `https://pubs.aip.org/aip/jmp/article/57/9/092504/648118/How-should-spin-weighted-spherical-functions-be` | Journal of Mathematical Physics article landing page. | living | 2026-06-29 | partial | Background on spin-weighted functions and quaternion viewpoints. |
 | `https://rotations.berkeley.edu/geodesics-of-the-rotation-group-so3/` | Berkeley rotations course page. | living | 2026-06-29 | partial | Background on SO(3) and quaternion rotation geometry. |
+| `https://github.com/charmplusplus/charm/blob/main/doc/quickstart.rst` | Charm++ quickstart from the Charm++ repository. | living | 2026-06-29 | partial | Background for `.ci` files, generated `.decl.h` and `.def.h` files, `charmc`, and `charmrun`. |
+| `https://github.com/charmplusplus/charm/blob/main/doc/charm%2B%2B/manual.rst` | Charm++ language manual from the Charm++ repository. | living | 2026-06-29 | partial | Background for chares, entry methods, proxies, SDAG, PUP, checkpoint/restart, reductions, and chare arrays. |
+| `https://github.com/charmplusplus/charm/blob/main/doc/libraries/manual.rst` | Charm++ and Converse libraries manual from the Charm++ repository. | living | 2026-06-29 | partial | Background for CkIO. |
 
 ## Exclusions
 
