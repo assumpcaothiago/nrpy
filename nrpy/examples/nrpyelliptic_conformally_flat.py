@@ -137,7 +137,8 @@ boundary_conditions_desc = "outgoing radiation"
 set_of_CoordSystems = {CoordSystem}
 num_cuda_streams = 1
 # fmt: off
-# ID choices are: "gw150914", "axisymmetric_x_axis", axisymmetric_z_axis, and "single_puncture"
+# ID choices are: "gw150914", "gw150914_z_axis", "gw150914_x_axis",
+# "axisymmetric_x_axis", "axisymmetric_z_axis", and "single_puncture"
 initial_data_type = "axisymmetric_x_axis"
 
 q = 36.0 / 29.0
@@ -148,8 +149,21 @@ S1_y_dimless = -0.46
 m0_adm = q / (1.0 + q)
 m1_adm = 1.0 / (1.0 + q)
 
-gw150914_params = {
-    "zPunc": 5.0,
+def rotate_old_to_new(vec: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Map OLD/SinhSymTP components to NEW/SinhSymTPCylindrical components."""
+    return (vec[2], vec[0], vec[1])
+
+
+def component_dict(prefix: str, vec: tuple[float, float, float]) -> dict[str, float]:
+    """Return component CodeParameter assignments for a Cartesian vector."""
+    return {
+        f"{prefix}_x": vec[0],
+        f"{prefix}_y": vec[1],
+        f"{prefix}_z": vec[2],
+    }
+
+
+gw150914_common_params = {
     "q": q,
     "bare_mass_0": 0.51841993533587039,
     "bare_mass_1": 0.39193567996522616,
@@ -159,12 +173,32 @@ gw150914_params = {
     "S1_y_dimless": S1_y_dimless,
     "m0_adm": m0_adm,
     "m1_adm": m1_adm,
-    "S0_y": S0_y_dimless * (m0_adm ** 2),
-    "S1_y": S1_y_dimless * (m1_adm ** 2),
-    "P0_x": Pphi,
-    "P0_z": Pr,
-    "P1_x": -Pphi,
-    "P1_z": -Pr,
+}
+S0_old_y = S0_y_dimless * (m0_adm ** 2)
+S1_old_y = S1_y_dimless * (m1_adm ** 2)
+P0_old = (Pphi, 0.0, Pr)
+P1_old = (-Pphi, 0.0, -Pr)
+S0_old = (0.0, S0_old_y, 0.0)
+S1_old = (0.0, S1_old_y, 0.0)
+
+gw150914_z_axis_params = {
+    **gw150914_common_params,
+    "xPunc": 0.0,
+    "zPunc": 5.0,
+    **component_dict("P0", P0_old),
+    **component_dict("P1", P1_old),
+    **component_dict("S0", S0_old),
+    **component_dict("S1", S1_old),
+}
+
+gw150914_x_axis_params = {
+    **gw150914_common_params,
+    "xPunc": 5.0,
+    "zPunc": 0.0,
+    **component_dict("P0", rotate_old_to_new(P0_old)),
+    **component_dict("P1", rotate_old_to_new(P1_old)),
+    **component_dict("S0", rotate_old_to_new(S0_old)),
+    **component_dict("S1", rotate_old_to_new(S1_old)),
 }
 
 axisymmetric_z_axis_params = {
@@ -187,6 +221,32 @@ single_puncture_params = {
     "bare_mass_0": 0.5,
     "S0_z": 0.2,
 }
+
+initial_data_params = {
+    "gw150914": gw150914_z_axis_params,
+    "gw150914_z_axis": gw150914_z_axis_params,
+    "gw150914_x_axis": gw150914_x_axis_params,
+    "single_puncture": single_puncture_params,
+    "axisymmetric_z_axis": axisymmetric_z_axis_params,
+    "axisymmetric_x_axis": axisymmetric_x_axis_params,
+}
+
+recommended_initial_data_by_coordsystem = {
+    "SinhSymTP": {"gw150914", "gw150914_z_axis", "axisymmetric_z_axis"},
+    "SinhSymTPCylindrical": {"gw150914_x_axis", "axisymmetric_x_axis"},
+}
+
+if initial_data_type not in initial_data_params:
+    raise ValueError(f"Unsupported initial_data_type: {initial_data_type}")
+
+recommended_initial_data = recommended_initial_data_by_coordsystem.get(CoordSystem)
+if recommended_initial_data is not None and initial_data_type not in recommended_initial_data:
+    print(
+        "WARNING: CoordSystem="
+        f"{CoordSystem} is not the natural pairing for initial_data_type="
+        f"{initial_data_type}. Recommended choices: "
+        f"{', '.join(sorted(recommended_initial_data))}."
+    )
 # fmt: on
 
 project_dir = os.path.join("project", project_name)
@@ -382,49 +442,26 @@ if CoordSystem == "SinhSymTPCylindrical":
     par.adjust_CodeParam_default("SINHWZ", SINHWZ)
 
 # Update parameters specific to initial data type
-if initial_data_type == "gw150914":
-    for param, value in gw150914_params.items():
-        if param in [
-            "zPunc",
-            "bare_mass_0",
-            "bare_mass_1",
-            "S0_y",
-            "S1_y",
-            "P0_x",
-            "P0_z",
-            "P1_x",
-            "P1_z",
-        ]:
-            par.adjust_CodeParam_default(param, value)
-
-if initial_data_type == "single_puncture":
-    for param, value in single_puncture_params.items():
-        if param in [
-            "bare_mass_0",
-            "S0_z",
-        ]:
-            par.adjust_CodeParam_default(param, value)
-if initial_data_type == "axisymmetric_z_axis":
-    for param, value in axisymmetric_z_axis_params.items():
-        if param in [
-            "zPunc",
-            "bare_mass_0",
-            "bare_mass_1",
-            "S0_z",
-            "S1_z",
-        ]:
-            par.adjust_CodeParam_default(param, value)
-
-if initial_data_type == "axisymmetric_x_axis":
-    for param, value in axisymmetric_x_axis_params.items():
-        if param in [
-            "xPunc",
-            "bare_mass_0",
-            "bare_mass_1",
-            "S0_x",
-            "S1_x",
-        ]:
-            par.adjust_CodeParam_default(param, value)
+for param, value in initial_data_params[initial_data_type].items():
+    if param in [
+        "xPunc",
+        "zPunc",
+        "bare_mass_0",
+        "bare_mass_1",
+        "P0_x",
+        "P0_y",
+        "P0_z",
+        "P1_x",
+        "P1_y",
+        "P1_z",
+        "S0_x",
+        "S0_y",
+        "S0_z",
+        "S1_x",
+        "S1_y",
+        "S1_z",
+    ]:
+        par.adjust_CodeParam_default(param, value)
 
 BHaH.diagnostics.diagnostic_gfs_h_create.diagnostics_gfs_h_create(
     project_dir=project_dir
