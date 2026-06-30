@@ -14,7 +14,6 @@ from typing import List, Tuple, Union, cast
 import nrpy.c_function as cfc
 import nrpy.helpers.parallel_codegen as pcg
 
-
 Param = Tuple[str, str]
 
 
