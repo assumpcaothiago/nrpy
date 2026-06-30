@@ -32,6 +32,7 @@ def register_C_functions(
     set_parity_on_aux: bool = False,
     set_parity_on_auxevol: bool = False,
     enable_masks: bool = False,
+    local_wavespeed_auxevol_gf: str = "",
 ) -> None:
     """
     Register various C functions responsible for handling boundary conditions.
@@ -41,6 +42,9 @@ def register_C_functions(
     :param set_parity_on_aux: If True, set parity on auxiliary grid functions.
     :param set_parity_on_auxevol: If True, set parity on auxiliary evolution grid functions.
     :param enable_masks: If True, make bcstruct algorithm mask-aware.
+    :param local_wavespeed_auxevol_gf: If nonempty, radiation BCs read this
+                                       AUXEVOL gridfunction locally instead of
+                                       using custom_wavespeed[].
     """
     _ = par.CodeParameter(
         "char[50]", __name__, "outer_bc_type", "radiation", commondata=True
@@ -60,6 +64,7 @@ def register_C_functions(
         BHaH.CurviBoundaryConditions.apply_bcs_outerradiation_and_inner.register_CFunction_apply_bcs_outerradiation_and_inner(
             CoordSystem=CoordSystem,
             radiation_BC_fd_order=radiation_BC_fd_order,
+            local_wavespeed_auxevol_gf=local_wavespeed_auxevol_gf,
         )
 
     # Register C function to apply boundary conditions to inner-only boundary points.

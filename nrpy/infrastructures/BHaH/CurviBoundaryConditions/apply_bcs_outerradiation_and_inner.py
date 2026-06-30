@@ -481,15 +481,21 @@ return partial_t_f_outgoing_wave + k * rinv*rinv*rinv;
     return cf.full_function
 
 
-def setup_Cfunction_apply_bcs_pure_only() -> Tuple[str, str]:
+def setup_Cfunction_apply_bcs_pure_only(
+    local_wavespeed_auxevol_gf: str = "",
+) -> Tuple[str, str]:
     """
     Generate the prefunction string for apply_bcs_pure_only.
 
     This requires a function that will launch the compute kernel as well
     as the compute kernel itself.
 
+    :param local_wavespeed_auxevol_gf: If nonempty, read this AUXEVOL
+                                       gridfunction locally for each boundary point
+                                       instead of using custom_wavespeed[].
     :return: A tuple containing the prefunction and the compute kernel.
     """
+    use_local_wavespeed = bool(local_wavespeed_auxevol_gf)
     # Header details for function that will launch the GPU kernel
     desc = "Apply BCs to pure boundary points"
 
@@ -499,9 +505,12 @@ def setup_Cfunction_apply_bcs_pure_only() -> Tuple[str, str]:
         "xx": "REAL *restrict *",
         "gfs": "REAL *restrict",
         "rhs_gfs": "REAL *restrict",
-        "custom_wavespeed": "const REAL *",
-        "custom_f_infinity": "const REAL *",
     }
+    if use_local_wavespeed:
+        params_dict["auxevol_gfs"] = "const REAL *restrict"
+    else:
+        params_dict["custom_wavespeed"] = "const REAL *"
+    params_dict["custom_f_infinity"] = "const REAL *"
     name = "apply_bcs_pure_only"
     cfunc_type = "static void"
     parallelization = par.parval_from_str("parallelization")
@@ -526,14 +535,26 @@ for (int idx2d = tid0; idx2d < num_pure_outer_boundary_points; idx2d+=stride0) {
     const short FACEX2 = pure_outer_bc_array[idx2d].FACEX2;
     const int idx3 = IDX3(i0,i1,i2);
     REAL* xx[3] = {x0, x1, x2};
-    for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+"""
+    wavespeed_expr = "custom_wavespeed[which_gf]"
+    if use_local_wavespeed:
+        wavespeed_expr = "local_wavespeed"
+        kernel_body += f"""const int i0_wavespeed = i0 < NGHOSTS ? NGHOSTS : (i0 >= Nxx_plus_2NGHOSTS0 - NGHOSTS ? Nxx_plus_2NGHOSTS0 - NGHOSTS - 1 : i0);
+    const int i1_wavespeed = i1 < NGHOSTS ? NGHOSTS : (i1 >= Nxx_plus_2NGHOSTS1 - NGHOSTS ? Nxx_plus_2NGHOSTS1 - NGHOSTS - 1 : i1);
+    const int i2_wavespeed = i2 < NGHOSTS ? NGHOSTS : (i2 >= Nxx_plus_2NGHOSTS2 - NGHOSTS ? Nxx_plus_2NGHOSTS2 - NGHOSTS - 1 : i2);
+    const REAL local_wavespeed = auxevol_gfs[IDX4({local_wavespeed_auxevol_gf}, i0_wavespeed, i1_wavespeed, i2_wavespeed)];
+"""
+    kernel_body += f"""    for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {{
+        const REAL gf_wavespeed = {wavespeed_expr};
         // *** Apply radiation BCs to all outer boundary points. ***
         rhs_gfs[IDX4pt(which_gf, idx3)] = radiation_bcs(params, xx, gfs, rhs_gfs, which_gf,
-                                                        custom_wavespeed[which_gf], custom_f_infinity[which_gf],
+                                                        gf_wavespeed, custom_f_infinity[which_gf],
                                                         i0,i1,i2, FACEX0,FACEX1,FACEX2);
-    }
-  }
-""".replace("params,", "streamid," if parallelization == "cuda" else "params,").replace(
+    }}
+  }}
+""".replace(
+        "params,", "streamid," if parallelization == "cuda" else "params,"
+    ).replace(
         "custom_", "d_gridfunctions_" if parallelization == "cuda" else "custom_"
     )
     comments = "Apply BCs to pure points."
@@ -549,12 +570,15 @@ for (int idx2d = tid0; idx2d < num_pure_outer_boundary_points; idx2d+=stride0) {
         "x1": "REAL *restrict",
         "x2": "REAL *restrict",
     }
+    if use_local_wavespeed:
+        arg_dict_cuda["auxevol_gfs"] = "const REAL *restrict"
     arg_dict_host = {
         "params": "const params_struct *restrict",
         **arg_dict_cuda,
-        "custom_wavespeed": "const REAL *",
-        "custom_f_infinity": "const REAL *",
     }
+    if not use_local_wavespeed:
+        arg_dict_host["custom_wavespeed"] = "const REAL *"
+    arg_dict_host["custom_f_infinity"] = "const REAL *"
     prefunc, new_body = parallel_utils.generate_kernel_and_launch_code(
         name,
         kernel_body,
@@ -613,6 +637,7 @@ def register_CFunction_apply_bcs_outerradiation_and_inner(
     cfunc_decorators: str = "",
     radiation_BC_fd_order: int = 2,
     rational_const_alias: str = "static const",
+    local_wavespeed_auxevol_gf: str = "",
 ) -> None:
     """
     Register a C function to apply boundary conditions to both pure outer and inner boundary points.
@@ -621,6 +646,9 @@ def register_CFunction_apply_bcs_outerradiation_and_inner(
     :param cfunc_decorators: Optional decorators for CFunctions, e.g. CUDA identifiers, templates
     :param radiation_BC_fd_order: Finite differencing order for the radiation boundary conditions. Default is 2.
     :param rational_const_alias: Alias for rational constants. Default is "static const".
+    :param local_wavespeed_auxevol_gf: If nonempty, read this AUXEVOL gridfunction
+                                       locally for each boundary point instead of
+                                       passing custom_wavespeed[].
 
     Doctests:
     >>> from nrpy.helpers.generic import validate_strings
@@ -650,7 +678,9 @@ def register_CFunction_apply_bcs_outerradiation_and_inner(
         rational_const_alias=rational_const_alias,
     )
     apply_bcs_pure_only_prefuncs, apply_bcs_pure_only_function_call = (
-        setup_Cfunction_apply_bcs_pure_only()
+        setup_Cfunction_apply_bcs_pure_only(
+            local_wavespeed_auxevol_gf=local_wavespeed_auxevol_gf
+        )
     )
     prefunc += apply_bcs_pure_only_prefuncs
     desc = """This function is responsible for applying boundary conditions (BCs) to both pure outer and inner
@@ -660,18 +690,28 @@ applies BCs to the inner boundary points, which may map either to the grid inter
 """
     cfunc_type = "void"
     name = "apply_bcs_outerradiation_and_inner"
-    params = """const commondata_struct *restrict commondata, const params_struct *restrict params,
+    wavespeed_param = (
+        "const REAL *restrict auxevol_gfs,"
+        if local_wavespeed_auxevol_gf
+        else "const REAL custom_wavespeed[NUM_EVOL_GFS],"
+    )
+    params = f"""const commondata_struct *restrict commondata, const params_struct *restrict params,
     const bc_struct *restrict bcstruct, REAL *restrict xx[3],
-    const REAL custom_wavespeed[NUM_EVOL_GFS],
+    {wavespeed_param}
     const REAL custom_f_infinity[NUM_EVOL_GFS],
     REAL *restrict gfs, REAL *restrict rhs_gfs"""
 
     body: str = ""
     if par.parval_from_str("parallelization") == "cuda":
-        body = r"""
+        body = """
   // Update device constants
+"""
+        if not local_wavespeed_auxevol_gf:
+            body += r"""
   cudaMemcpyToSymbol(d_gridfunctions_wavespeed, custom_wavespeed, NUM_EVOL_GFS * sizeof(REAL));
   cudaCheckErrors(copy, "Copy to d_gridfunctions_wavespeed failed");
+"""
+        body += r"""
   cudaMemcpyToSymbol(d_gridfunctions_f_infinity, custom_f_infinity, NUM_EVOL_GFS * sizeof(REAL));
   cudaCheckErrors(copy, "Copy to d_gridfunctions_f_infinity failed");
   """

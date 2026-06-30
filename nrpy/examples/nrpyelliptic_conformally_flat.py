@@ -55,13 +55,13 @@ par.set_parval_from_str("Infrastructure", "BHaH")
 enable_simd_intrinsics = True
 grid_physical_size = 1.0e6
 t_final = grid_physical_size  # This parameter is effectively not used in NRPyElliptic
-nn_max = 10000  # Sets the maximum number of relaxation steps
+nn_max = 200000  # Sets the maximum number of relaxation steps
 default_axis_interpolation_axis = "x"
 default_axis_interpolation_num_points = 1024
-default_axis_interpolation_x_min = -10.0
-default_axis_interpolation_x_max = 10.0
-default_axis_interpolation_z_min = -10.0
-default_axis_interpolation_z_max = 10.0
+default_axis_interpolation_x_min = -15.0
+default_axis_interpolation_x_max = 15.0
+default_axis_interpolation_z_min = -15.0
+default_axis_interpolation_z_max = 15.0
 default_axis_interpolation_offset = 1.0e-6
 
 
@@ -88,7 +88,7 @@ log10_residual_tolerance = get_log10_residual_tolerance(fp_type_str=fp_type)
 default_compute_residual_every = 1
 default_diagnostics_nearest_output_every = 1000
 default_checkpoint_every = 1000
-eta_damping = 1.0
+eta_damping = 1.0  # 11.0
 MINIMUM_GLOBAL_WAVESPEED = 0.7
 CFL_FACTOR = 1.0  # NRPyElliptic wave speed prescription assumes this parameter is ALWAYS set to 1
 # CoordSystem = "SinhSpherical"
@@ -98,7 +98,11 @@ CoordSystem = "SinhSymTPCylindrical"
 Nxx_dict = {
     "SymTP": [128, 128, 16],
     "SinhSymTP": [128, 128, 16],
-    "SinhSymTPCylindrical": [64, 32, 64],
+    "SinhSymTPCylindrical": [
+        64,
+        64,
+        64,
+    ],  # low resolution, needs multiple restarts changing eta_damping
     "SinhCylindricalv2": [128, 16, 256],
     "SinhSpherical": [128, 64, 16],
 }
@@ -125,21 +129,21 @@ if CoordSystem == "SinhSymTPCylindrical":
     AMPLZ = grid_physical_size
     bScaleXY = 5.0
     SINHWXY = 0.07
-    SINHWZ = 0.08
+    SINHWZ = 0.05
 
 OMP_collapse = 1
 enable_checkpointing = True
-MoL_method = "SSPRK54"  # "SSPRK33", "RK4"
-fd_order = 10
-radiation_BC_fd_order = 6
+MoL_method = "RK4"  # "SSPRK33", "RK4"
+fd_order = 4
+radiation_BC_fd_order = 4
 enable_parallel_codegen = True
 boundary_conditions_desc = "outgoing radiation"
 set_of_CoordSystems = {CoordSystem}
 num_cuda_streams = 1
 # fmt: off
-# ID choices are: "gw150914", "gw150914_z_axis", "gw150914_x_axis",
+# ID choices are: "gw150914_z_axis", "gw150914_x_axis",
 # "axisymmetric_x_axis", "axisymmetric_z_axis", and "single_puncture"
-initial_data_type = "axisymmetric_x_axis"
+initial_data_type = "gw150914_x_axis"
 
 q = 36.0 / 29.0
 Pr = -0.00084541526517121  # Radial linear momentum
@@ -223,7 +227,6 @@ single_puncture_params = {
 }
 
 initial_data_params = {
-    "gw150914": gw150914_z_axis_params,
     "gw150914_z_axis": gw150914_z_axis_params,
     "gw150914_x_axis": gw150914_x_axis_params,
     "single_puncture": single_puncture_params,
@@ -232,7 +235,7 @@ initial_data_params = {
 }
 
 recommended_initial_data_by_coordsystem = {
-    "SinhSymTP": {"gw150914", "gw150914_z_axis", "axisymmetric_z_axis"},
+    "SinhSymTP": {"gw150914_z_axis", "axisymmetric_z_axis"},
     "SinhSymTPCylindrical": {"gw150914_x_axis", "axisymmetric_x_axis"},
 }
 
@@ -365,21 +368,14 @@ if __name__ == "__main__" and enable_parallel_codegen:
 BHaH.CurviBoundaryConditions.register_all.register_C_functions(
     set_of_CoordSystems,
     radiation_BC_fd_order=radiation_BC_fd_order,
+    local_wavespeed_auxevol_gf="VARIABLE_WAVESPEEDGF",
 )
-wave_speed_assignment = (
-    "cudaMemcpy(&wavespeed_at_outer_boundary, &auxevol_gfs[IDX4P(params, VARIABLE_WAVESPEEDGF, params->Nxx_plus_2NGHOSTS0 - NGHOSTS - 1, NGHOSTS, params->Nxx_plus_2NGHOSTS2 / 2)], sizeof(REAL), cudaMemcpyDeviceToHost);"
-    if parallelization == "cuda"
-    else "wavespeed_at_outer_boundary = auxevol_gfs[IDX4P(params, VARIABLE_WAVESPEEDGF, params->Nxx_plus_2NGHOSTS0 - NGHOSTS - 1, NGHOSTS, params->Nxx_plus_2NGHOSTS2 / 2)];"
-)
-rhs_string = f"""rhs_eval(commondata, params, rfmstruct,  auxevol_gfs, RK_INPUT_GFS, RK_OUTPUT_GFS);
-if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0) {{
-  REAL wavespeed_at_outer_boundary;
-  {wave_speed_assignment}
-  const REAL custom_gridfunctions_wavespeed[2] = {{wavespeed_at_outer_boundary, wavespeed_at_outer_boundary}};
+rhs_string = """rhs_eval(commondata, params, rfmstruct,  auxevol_gfs, RK_INPUT_GFS, RK_OUTPUT_GFS);
+if (strncmp(commondata->outer_bc_type, "radiation", 50) == 0) {
   apply_bcs_outerradiation_and_inner(commondata, params, bcstruct, griddata->xx,
-                                     custom_gridfunctions_wavespeed, gridfunctions_f_infinity,
+                                     auxevol_gfs, gridfunctions_f_infinity,
                                      RK_INPUT_GFS, RK_OUTPUT_GFS);
-}}"""
+}"""
 BHaH.MoLtimestepping.register_all.register_CFunctions(
     MoL_method=MoL_method,
     rhs_string=rhs_string,
@@ -508,7 +504,7 @@ axis_interpolation_call = (
 checkpoint_parfile_restart_call = (
     "checkpoint_apply_parfile_updates_after_restart("
     "&commondata, argc, argv, checkpoint_has_been_read, "
-    f"{'griddata_host' if parallelization == 'cuda' else 'griddata'});\n"
+    f"{'griddata_host, griddata_device' if parallelization == 'cuda' else 'griddata, griddata'});\n"
 )
 pre_MoL_step_forward_in_time = rf"""    stop_conditions_check(&commondata);
     if (commondata.stop_relaxation) {{

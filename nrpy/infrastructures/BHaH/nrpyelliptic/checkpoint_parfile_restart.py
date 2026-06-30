@@ -173,7 +173,8 @@ source terms, grid layout, or boundary setup.
     params = (
         "commondata_struct *restrict commondata, const int argc, "
         "const char *argv[], const int checkpoint_has_been_read, "
-        "griddata_struct *restrict griddata"
+        "griddata_struct *griddata, "
+        "griddata_struct *griddata_device"
     )
     prefunc = r"""
 static int checkpoint_REAL_changed(const REAL old_value, const REAL new_value) {
@@ -216,7 +217,35 @@ static void checkpoint_report_disallowed_string_update(const char *name, const c
   fprintf(stderr, "checkpoint parfile error: disallowed change to %s: \"%s\" -> \"%s\"\n", name, old_value, new_value);
 }
 
-"""
+static void checkpoint_reequilibrate_vv_after_eta_update(const commondata_struct *restrict commondata,
+                                                         griddata_struct *griddata,
+                                                         griddata_struct *griddata_device) {
+#ifndef __CUDACC__
+  (void)griddata_device;
+#endif
+  for (int grid = 0; grid < commondata->NUMGRIDS; grid++) {
+    const params_struct *restrict params = &griddata[grid].params;
+    const int Nxx_plus_2NGHOSTS0 = params->Nxx_plus_2NGHOSTS0;
+    const int Nxx_plus_2NGHOSTS1 = params->Nxx_plus_2NGHOSTS1;
+    const int Nxx_plus_2NGHOSTS2 = params->Nxx_plus_2NGHOSTS2;
+    const size_t ntot_grid = (size_t)Nxx_plus_2NGHOSTS0 * (size_t)Nxx_plus_2NGHOSTS1 * (size_t)Nxx_plus_2NGHOSTS2;
+    REAL *restrict y_n_gfs = griddata[grid].gridfuncs.y_n_gfs;
+
+#pragma omp parallel for
+    for (size_t idx3 = 0; idx3 < ntot_grid; idx3++) {
+      y_n_gfs[IDX4pt(VVGF, idx3)] = commondata->eta_damping * y_n_gfs[IDX4pt(UUGF, idx3)];
+    }
+
+#ifdef __CUDACC__
+    const size_t streamid = params->grid_idx % NUM_STREAMS;
+    cpyHosttoDevice__gf(commondata, params, griddata[grid].gridfuncs.y_n_gfs,
+                        griddata_device[grid].gridfuncs.y_n_gfs, VVGF, VVGF, streamid);
+    cudaStreamSynchronize(streams[streamid]);
+#endif
+  }
+}
+
+    """
 
     body = f"""
   if (!checkpoint_has_been_read) {{
@@ -228,6 +257,7 @@ static void checkpoint_report_disallowed_string_update(const char *name, const c
   commondata_struct parfile_commondata;
   commondata_struct_set_to_default(&parfile_commondata);
   cmdline_input_and_parfile_parser(&parfile_commondata, argc, argv);
+  const bool eta_damping_changed = checkpoint_REAL_changed(checkpoint_commondata.eta_damping, parfile_commondata.eta_damping);
 
   int disallowed_changes = 0;
 {_generate_disallowed_checks(disallowed_params)}
@@ -251,6 +281,12 @@ static void checkpoint_report_disallowed_string_update(const char *name, const c
   commondata->nn_0 = checkpoint_commondata.nn_0;
   commondata->log10_current_residual = checkpoint_commondata.log10_current_residual;
   commondata->start_wallclock_time = checkpoint_commondata.start_wallclock_time;
+
+  if (eta_damping_changed) {{
+    checkpoint_reequilibrate_vv_after_eta_update(commondata, griddata, griddata_device);
+    printf("checkpoint parfile update: re-equilibrated vv = eta_damping * uu after eta_damping change.\\n");
+    fflush(stdout);
+  }}
 
   // Recompute dt so an allowed CFL_FACTOR update is honored for any continued
   // relaxation from this checkpoint.
